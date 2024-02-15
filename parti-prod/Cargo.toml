@@ -1,0 +1,11 @@
+[package]
+name = "parti-prod"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow.workspace = true
+im = "15.1.0"
+itertools = "0.12.1"
+
+
