@@ -7,7 +7,7 @@
 /// 2. Never choose 1 as a factor since it doesn't increase the product
 ///     (except n=1)
 ///
-/// 3. For n >= 4, 3 is preferrable to choose over 2
+/// 3. For n > 5, 3 is preferrable to choose over 2
 ///
 /// 4. More, smaller factors are preferrable over fewer larger ones
 ///
