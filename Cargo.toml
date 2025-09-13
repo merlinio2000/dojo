@@ -1,9 +1,6 @@
 [workspace]
-resolver = "2"
-members = ["parti-prod"]
+resolver = "3"
+members = ["parti-prod", "scramble"]
 
 [workspace.dependencies]
 anyhow = { version = "1.0.79", features = ["backtrace"] }
-
-
-
