@@ -40,7 +40,7 @@ impl Player {
 // 2 bits per cell
 // bit1: is occupied (bool)
 // bit0: player1 = 0, player2 = 1
-struct Board(u16);
+struct Board(u32);
 impl Board {
     const CELL_SHIFT: usize = 2;
     const ROWS: usize = 3;
@@ -61,7 +61,7 @@ impl Board {
     fn set(&mut self, row: usize, col: usize, player: Player) {
         debug_assert_eq!(self.get(row, col), CellState::Free);
         let new_cell_state = player.cell_state();
-        self.0 |= (new_cell_state as u16) << (Self::CELL_SHIFT * Self::to_1d_idx(row, col));
+        self.0 |= (new_cell_state as u32) << (Self::CELL_SHIFT * Self::to_1d_idx(row, col));
     }
 }
 
@@ -93,6 +93,15 @@ mod test {
                     Player::Player2
                 };
                 board.set(row, col, player);
+            }
+        }
+        for col in 0..Board::COLS - 1 {
+            for row in 0..Board::ROWS - 1 {
+                let player = if (col + row) % 2 == 0 {
+                    Player::Player1
+                } else {
+                    Player::Player2
+                };
                 assert_eq!(board.get(row, col), player.cell_state())
             }
         }
