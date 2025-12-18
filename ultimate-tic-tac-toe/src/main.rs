@@ -153,7 +153,7 @@ impl Board {
         masks
     };
     //                                        2  1 0
-    const MASK_RESULT_COL_PLAYER1: u32 = 0b0011_1111;
+    const MASK_RESULT_COL_PLAYER1: u32 = 0b0010_1010;
     const MASK_RESULTS_COL_PLAYER1: [u32; Self::COLS] = {
         let mut mask_results = [0u32; Self::COLS];
         let mut i = 0;
@@ -288,6 +288,7 @@ mod test {
     use crate::{Board, CellState, Player};
 
     #[test]
+    /// verify we are truly col-major as all the bitmasks rely on it
     fn test_1d_idx() {
         assert_eq!(Board::to_1d_idx(0, 0), 0);
         assert_eq!(Board::to_1d_idx(1, 0), 1);
@@ -436,5 +437,49 @@ mod test {
             [Player2, Player2, Player2],
         ]);
         assert_eq!(board.calc_winner(), Some(Player::Player1));
+    }
+
+    #[test]
+    fn test_winner_col() {
+        use CellState::{Free, Player1, Player2};
+
+        let board = Board::from_matrix([
+            [Free, Free, Player2],
+            [Player1, Player1, Player2],
+            [Player1, Player1, Player2],
+        ]);
+        assert_eq!(board.calc_winner(), Some(Player::Player2));
+
+        let board = Board::from_matrix([
+            [Player1, Free, Player2],
+            [Player1, Player2, Player2],
+            [Player1, Player1, Player1],
+        ]);
+        assert_eq!(board.calc_winner(), Some(Player::Player1));
+
+        let board = Board::from_matrix([
+            [Player1, Player1, Free],
+            [Player2, Player1, Player2],
+            [Player2, Player1, Player2],
+        ]);
+        assert_eq!(board.calc_winner(), Some(Player::Player1));
+    }
+    #[test]
+    fn test_winner_diag() {
+        use CellState::{Free, Player1, Player2};
+
+        let board = Board::from_matrix([
+            [Free, Free, Player1],
+            [Player2, Player1, Player2],
+            [Player1, Player1, Player2],
+        ]);
+        assert_eq!(board.calc_winner(), Some(Player::Player1));
+
+        let board = Board::from_matrix([
+            [Player1, Free, Player2],
+            [Player1, Player2, Player2],
+            [Player2, Player1, Player1],
+        ]);
+        assert_eq!(board.calc_winner(), Some(Player::Player2));
     }
 }
