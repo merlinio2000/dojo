@@ -30,7 +30,7 @@ const PLAYER2_U8: u8 = CellState::Player2 as u8;
 impl TryFrom<u8> for CellState {
     type Error = ();
 
-    // TODO: unsafe transmute for max perf (probably, should check the ASM first)
+    // TODO PERF: unsafe transmute for max perf (probably, should check the ASM first)
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             FREE_U8 => Ok(CellState::Free),
@@ -65,13 +65,13 @@ impl Player {
 }
 
 type Score = i64;
-/// [`Board::N_CELLS`] * [`MIN_SCORE`] must not overflow
 const SCORE_LOSE: Score = -1;
 const SCORE_WIN: Score = 1;
 
 type Move = (usize, usize);
 
 struct BoardMoveCalc {
+    // TODO PERF: probably 0 pad for SIMD
     moves_buf: [Move; Board::N_CELLS],
 }
 
@@ -93,9 +93,8 @@ impl BoardMoveCalc {
         }
     }
 
-    fn available_moves(&mut self, board: &Board) -> &[Move] {
-        let is_available_results = Self::AVAILABLE_MASKS.map(|mask| (mask & board.0) == 0);
-        dbg!(is_available_results);
+    fn available_moves(&mut self, board_state: BoardState) -> &[Move] {
+        let is_available_results = Self::AVAILABLE_MASKS.map(|mask| (mask & board_state) == 0);
         let mut available_moves_idx = 0;
         for (cell_index, is_available) in is_available_results.into_iter().enumerate() {
             if is_available {
@@ -106,6 +105,8 @@ impl BoardMoveCalc {
         &self.moves_buf[..available_moves_idx]
     }
 }
+
+type BoardState = u32;
 
 // 2 bits per cell
 // bit1: is occupied (bool)
@@ -118,11 +119,11 @@ impl BoardMoveCalc {
 // - - - - - -
 // 2 | 5 | 8
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Board(u32);
+struct Board(BoardState);
 impl Board {
     #[allow(clippy::unusual_byte_groupings)]
     //                                      8   7 6  5 4  3 2  1 0
-    const ALL_CELLS_OCCUPIED_MASK: u32 = 0b10__1010_1010_1010_1010;
+    const ALL_CELLS_OCCUPIED_MASK: BoardState = 0b10__1010_1010_1010_1010;
     const CELL_BITS: usize = 2;
     const COLS: usize = 3;
     const ROWS: usize = Self::COLS;
@@ -152,7 +153,7 @@ impl Board {
         row + (col * Self::ROWS)
     }
     // col major
-    fn to_2d_idx(one_d_idx: usize) -> (usize, usize) {
+    fn to_2d_idx(one_d_idx: usize) -> Move {
         debug_assert!(one_d_idx < Self::N_CELLS);
 
         let row = one_d_idx % Self::COLS;
@@ -270,27 +271,58 @@ impl Board {
         None
     }
 
-    fn find_best_move(self, player: Player) -> (usize, usize) {
-        debug_assert_eq!(self.calc_winner(), None);
-        debug_assert!(!self.is_full());
+    #[inline]
+    pub(crate) fn find_move_scores(
+        self,
+        move_calc: &mut BoardMoveCalc,
+        player: Player,
+    ) -> impl ExactSizeIterator<Item = (Move, Score)> {
+        move_calc
+            .available_moves(self.0)
+            .iter()
+            .map(move |curr_move| {
+                let curr_move_score = self.evaluate_move(curr_move.0, curr_move.1, player);
+                (*curr_move, curr_move_score)
+            })
+    }
+
+    #[inline]
+    pub(crate) fn find_best_move_score(
+        self,
+        move_calc: &mut BoardMoveCalc,
+        player: Player,
+    ) -> (Move, Score) {
+        Self::find_move_scores(self, move_calc, player).fold(
+            ((0, 0), SCORE_LOSE),
+            |(best_move, best_move_score), (curr_move, curr_move_score)| {
+                if curr_move_score > best_move_score {
+                    (curr_move, curr_move_score)
+                } else {
+                    (best_move, best_move_score)
+                }
+            },
+        )
+    }
+
+    fn find_best_move(self, player: Player) -> Move {
+        debug_assert_eq!(
+            self.calc_winner(),
+            None,
+            "there should be no winner when finding best move"
+        );
+        debug_assert!(!self.is_full(), "cannot find move on full board");
 
         // start case is fixed, only choose the center cell
+        // (negamax would arrive to the same conclusion)
         if self.is_empty() {
             return (Self::ROWS / 2, Self::COLS / 2);
         }
 
+        // TODO PERF: extract for re-use
+        let mut board_move_calc = BoardMoveCalc::new();
+
         let (best_move, _best_move_score) =
-            BoardMoveCalc::new().available_moves(&self).iter().fold(
-                ((0, 0), SCORE_LOSE),
-                |(best_move, best_move_score), curr_move| {
-                    let curr_move_score = self.evaluate_move(curr_move.0, curr_move.1, player);
-                    if curr_move_score > best_move_score {
-                        (*curr_move, curr_move_score)
-                    } else {
-                        (best_move, best_move_score)
-                    }
-                },
-            );
+            Self::find_best_move_score(self, &mut board_move_calc, player);
 
         best_move
     }
@@ -306,7 +338,7 @@ impl Board {
             _ => {
                 let other_player = player.other();
                 -BoardMoveCalc::new()
-                    .available_moves(&self)
+                    .available_moves(self.0)
                     .iter()
                     .map(|(next_row, next_col)| {
                         self.evaluate_move(*next_row, *next_col, other_player)
@@ -348,9 +380,12 @@ fn main() {
     }
 }
 
+/// TODO: the symmetric tests could potentially greatly reduce the number of combinations to try
 #[cfg(test)]
 mod test {
-    use crate::{Board, BoardMoveCalc, CellState, Player};
+    use std::collections::HashMap;
+
+    use crate::{Board, BoardMoveCalc, CellState, Player, Score};
 
     #[test]
     /// verify we are truly col-major as all the bitmasks rely on it
@@ -369,8 +404,8 @@ mod test {
     #[test]
     fn test_board_empty() {
         let board = Board::new();
-        for col in 0..Board::COLS - 1 {
-            for row in 0..Board::ROWS - 1 {
+        for row in 0..Board::ROWS - 1 {
+            for col in 0..Board::COLS - 1 {
                 assert_eq!(board.get(row, col), CellState::Free)
             }
         }
@@ -397,9 +432,9 @@ mod test {
     #[test]
     fn test_board_fill() {
         let mut board = Board::new();
-        for col in 0..Board::COLS - 1 {
-            for row in 0..Board::ROWS - 1 {
-                let player = if (col + row) % 2 == 0 {
+        for row in 0..Board::ROWS - 1 {
+            for col in 0..Board::COLS - 1 {
+                let player = if (row + col) % 2 == 0 {
                     Player::Player1
                 } else {
                     Player::Player2
@@ -407,9 +442,9 @@ mod test {
                 board.set(row, col, player);
             }
         }
-        for col in 0..Board::COLS - 1 {
-            for row in 0..Board::ROWS - 1 {
-                let player = if (col + row) % 2 == 0 {
+        for row in 0..Board::ROWS - 1 {
+            for col in 0..Board::COLS - 1 {
+                let player = if (row + col) % 2 == 0 {
                     Player::Player1
                 } else {
                     Player::Player2
@@ -557,14 +592,14 @@ mod test {
             [Player2, Player1, Player2],
             [Player1, Player1, Player2],
         ]);
-        let moves = move_iter.available_moves(&board);
+        let moves = move_iter.available_moves(board.0);
         assert_eq!(moves.len(), 2);
         assert_eq!(moves[0], (0, 0));
         assert_eq!(moves[1], (0, 1));
 
         let board =
             Board::from_matrix([[Free, Free, Free], [Free, Free, Free], [Free, Free, Free]]);
-        let moves = move_iter.available_moves(&board);
+        let moves = move_iter.available_moves(board.0);
         assert_eq!(moves.len(), 9);
         for (idx, move_) in moves.iter().enumerate() {
             assert_eq!(*move_, Board::to_2d_idx(idx))
@@ -575,7 +610,149 @@ mod test {
             [Player2, Player1, Player2],
             [Player1, Player1, Player2],
         ]);
-        let moves = move_iter.available_moves(&board);
+        let moves = move_iter.available_moves(board.0);
         assert_eq!(moves.len(), 0);
+    }
+
+    #[test]
+    fn test_best_move_1_left() {
+        use CellState::{Free, Player1, Player2};
+
+        let board = Board::from_matrix([
+            [Free, Player1, Player1],
+            [Player1, Player2, Player2],
+            [Player2, Player1, Player2],
+        ]);
+        let best_move = board.find_best_move(Player::Player1);
+        assert_eq!(best_move, (0, 0));
+
+        let board = Board::from_matrix([
+            [Player2, Player1, Player1],
+            [Player1, Free, Player2],
+            [Player2, Player1, Player2],
+        ]);
+        let best_move = board.find_best_move(Player::Player1);
+        assert_eq!(best_move, (1, 1));
+    }
+
+    #[test]
+    fn test_best_move_2_left() {
+        use CellState::{Free, Player1, Player2};
+
+        let board = Board::from_matrix([
+            [Player1, Player2, Player1],
+            [Player1, Free, Player1],
+            [Player2, Free, Player2],
+        ]);
+        let best_move = board.find_best_move(Player::Player2);
+        assert_eq!(best_move, (2, 1));
+    }
+
+    #[test]
+    fn test_move_scores() {
+        use CellState::{Free, Player1, Player2};
+
+        let empty = Board::new();
+        let move_calc = &mut BoardMoveCalc::new();
+        let (best_move, best_score) = empty.find_best_move_score(move_calc, Player::Player1);
+        assert_eq!(best_move, (1, 1));
+        assert!(best_score >= 0);
+
+        let scores: HashMap<_, _> = empty.find_move_scores(move_calc, Player::Player1).collect();
+    }
+
+    #[test]
+    fn test_move_scores_symmetric_vertically_and_horizontally_mirrored() {
+        use CellState::{Free, Player1, Player2};
+
+        let empty = Board::new();
+        let move_calc = &mut BoardMoveCalc::new();
+        let (best_move, best_score) = empty.find_best_move_score(move_calc, Player::Player1);
+        assert_eq!(best_move, (1, 1));
+        assert!(best_score >= 0);
+
+        let only_center = Board::from_matrix([
+            [Free, Free, Free],
+            [Free, Player2, Free],
+            [Free, Free, Free],
+        ]);
+
+        for (board, name) in [(empty, "empty"), (only_center, "only_center")] {
+            let scores: HashMap<_, _> =
+                board.find_move_scores(move_calc, Player::Player1).collect();
+            // equal corners on empty board
+            let msg = format!("corners should equal to each other for board type: '{name}'");
+            assert_eq!(scores.get(&(0, 0)), scores.get(&(0, 2)), "{msg}");
+            assert_eq!(scores.get(&(0, 0)), scores.get(&(2, 0)), "{msg}");
+            assert_eq!(scores.get(&(0, 0)), scores.get(&(2, 2)), "{msg}");
+
+            // equal middles-of-the-sides
+            let msg =
+                format!("middles-of-the-sides should equal to each other for board type: '{name}'");
+            assert_eq!(scores.get(&(1, 0)), scores.get(&(0, 1)), "{msg}");
+            assert_eq!(scores.get(&(1, 0)), scores.get(&(1, 2)), "{msg}");
+            assert_eq!(scores.get(&(1, 0)), scores.get(&(2, 1)), "{msg}");
+        }
+    }
+
+    #[test]
+    fn test_move_scores_symmetric_vertically_mirrored() {
+        use CellState::{Free, Player1, Player2};
+
+        let board = Board::from_matrix([
+            [Free, Free, Free],
+            [Player1, Player2, Player1],
+            [Free, Free, Free],
+        ]);
+        let move_calc = &mut BoardMoveCalc::new();
+
+        let scores: HashMap<_, _> = board.find_move_scores(move_calc, Player::Player2).collect();
+        // equal corners on empty board
+        assert_eq!(scores.get(&(0, 0)), scores.get(&(0, 2)));
+        assert_eq!(scores.get(&(0, 0)), scores.get(&(2, 0)));
+        assert_eq!(scores.get(&(0, 0)), scores.get(&(2, 2)));
+        // equal middle-of-the-sides
+        assert_eq!(scores.get(&(0, 1)), scores.get(&(2, 1)));
+    }
+
+    #[test]
+    fn test_move_scores_symmetric_horizontally_mirrored() {
+        use CellState::{Free, Player1, Player2};
+
+        let board0 = Board::from_matrix([
+            [Free, Free, Free],
+            [Player1, Player2, Free],
+            [Free, Free, Free],
+        ]);
+        let board1 = Board::from_matrix([
+            [Free, Free, Free],
+            [Player1, Player2, Player2],
+            [Free, Free, Free],
+        ]);
+        let board2 = Board::from_matrix([
+            [Player2, Free, Free],
+            [Player1, Player2, Player1],
+            [Player2, Free, Free],
+        ]);
+        let board3 = Board::from_matrix([
+            [Player2, Free, Player1],
+            [Player1, Player1, Player2],
+            [Player2, Free, Player1],
+        ]);
+
+        let move_calc = &mut BoardMoveCalc::new();
+        for (idx, board) in [board0, board1, board2, board3].iter().enumerate() {
+            let scores: HashMap<_, _> =
+                board.find_move_scores(move_calc, Player::Player1).collect();
+            let get_row =
+                |row: usize| [0, 1, 2].map(|col| scores.get(&(row, col)).unwrap_or(&Score::MIN));
+
+            let upper = get_row(0);
+            let lower = get_row(2);
+            assert_eq!(
+                upper, lower,
+                "upper and lower row should equal to each other for board horizontally symmetric board with index '{idx}'"
+            );
+        }
     }
 }
