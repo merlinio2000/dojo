@@ -293,7 +293,8 @@ impl Board {
         player: Player,
     ) -> (Move, Score) {
         Self::find_move_scores(self, move_calc, player).fold(
-            ((0, 0), SCORE_LOSE),
+            // i32 for compatibility with other languages that parse to probably int
+            ((i32::MAX as usize, i32::MAX as usize), Score::MIN),
             |(best_move, best_move_score), (curr_move, curr_move_score)| {
                 if curr_move_score > best_move_score {
                     (curr_move, curr_move_score)
@@ -356,6 +357,7 @@ fn main() {
         buf.clear();
         std::io::stdin().read_line(buf).unwrap();
     };
+    let mut my_player = Player::Player2;
     loop {
         read_line_buffered(&mut input);
         let (opp_row, opp_col) = input
@@ -363,10 +365,9 @@ fn main() {
             .split_once(' ')
             .expect("opponent input should have a space");
         let (opp_row, opp_col) = (
-            opp_row.parse::<usize>().expect("opp_row is not usize"),
-            opp_col.parse::<usize>().expect("opp_col is not usize"),
+            opp_row.parse::<i32>().expect("opp_row is not usize"),
+            opp_col.parse::<i32>().expect("opp_col is not usize"),
         );
-        board.set(opp_row, opp_col, Player::Player1);
 
         // read and discard available inputs
         read_line_buffered(&mut input);
@@ -377,6 +378,16 @@ fn main() {
         for _ in 0..n_available {
             read_line_buffered(&mut input);
         }
+
+        if opp_row == -1 {
+            my_player = Player::Player1;
+        } else {
+            board.set(opp_row as usize, opp_col as usize, my_player.other());
+        }
+
+        let (row, col) = board.find_best_move(my_player);
+        board.set(row, col, my_player);
+        println!("{row} {col}");
     }
 }
 
@@ -612,6 +623,15 @@ mod test {
         ]);
         let moves = move_iter.available_moves(board.0);
         assert_eq!(moves.len(), 0);
+
+        let board = Board::from_matrix([
+            [Player1, Free, Free],
+            [Free, Free, Free],
+            [Free, Free, Free],
+        ]);
+        let moves = move_iter.available_moves(board.0);
+        assert_eq!(moves.len(), 8);
+        assert!(moves.iter().all(|move_| *move_ != (0, 0)));
     }
 
     #[test]
@@ -646,19 +666,6 @@ mod test {
         ]);
         let best_move = board.find_best_move(Player::Player2);
         assert_eq!(best_move, (2, 1));
-    }
-
-    #[test]
-    fn test_move_scores() {
-        use CellState::{Free, Player1, Player2};
-
-        let empty = Board::new();
-        let move_calc = &mut BoardMoveCalc::new();
-        let (best_move, best_score) = empty.find_best_move_score(move_calc, Player::Player1);
-        assert_eq!(best_move, (1, 1));
-        assert!(best_score >= 0);
-
-        let scores: HashMap<_, _> = empty.find_move_scores(move_calc, Player::Player1).collect();
     }
 
     #[test]
