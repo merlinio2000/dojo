@@ -42,16 +42,68 @@ impl TryFrom<u8> for CellState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 enum Player {
     Player1 = 0b0,
     Player2 = 0b1,
 }
 impl Player {
+    // TODO PERF: could technically be just a `| 0b10`
     fn cell_state(&self) -> CellState {
         match self {
             Player::Player1 => CellState::Player1,
             Player::Player2 => CellState::Player2,
         }
+    }
+    // TODO PERF: could technically be just a bitflip
+    fn other(&self) -> Player {
+        match self {
+            Player::Player1 => Player::Player2,
+            Player::Player2 => Player::Player1,
+        }
+    }
+}
+
+type Score = i64;
+/// [`Board::N_CELLS`] * [`MIN_SCORE`] must not overflow
+const SCORE_LOSE: Score = -1;
+const SCORE_WIN: Score = 1;
+
+type Move = (usize, usize);
+
+struct BoardMoveCalc {
+    moves_buf: [Move; Board::N_CELLS],
+}
+
+impl BoardMoveCalc {
+    const AVAILABLE_MASKS: [u32; Board::N_CELLS] = {
+        let mut masks = [0; Board::N_CELLS];
+        let mut idx = 0;
+        while idx != masks.len() {
+            masks[idx] = 0b10 << (idx * Board::CELL_BITS);
+            idx += 1;
+        }
+
+        masks
+    };
+
+    fn new() -> BoardMoveCalc {
+        Self {
+            moves_buf: [(0, 0); Board::N_CELLS],
+        }
+    }
+
+    fn available_moves(&mut self, board: &Board) -> &[Move] {
+        let is_available_results = Self::AVAILABLE_MASKS.map(|mask| (mask & board.0) == 0);
+        dbg!(is_available_results);
+        let mut available_moves_idx = 0;
+        for (cell_index, is_available) in is_available_results.into_iter().enumerate() {
+            if is_available {
+                self.moves_buf[available_moves_idx] = Board::to_2d_idx(cell_index);
+                available_moves_idx += 1;
+            }
+        }
+        &self.moves_buf[..available_moves_idx]
     }
 }
 
@@ -103,8 +155,8 @@ impl Board {
     fn to_2d_idx(one_d_idx: usize) -> (usize, usize) {
         debug_assert!(one_d_idx < Self::N_CELLS);
 
-        let row = one_d_idx / Self::COLS;
-        let col = one_d_idx % Self::COLS;
+        let row = one_d_idx % Self::COLS;
+        let col = one_d_idx / Self::COLS;
         (row, col)
     }
     fn get(&self, row: usize, col: usize) -> CellState {
@@ -114,6 +166,9 @@ impl Board {
     fn is_empty(&self) -> bool {
         self.0 == 0
     }
+    fn is_full(&self) -> bool {
+        self.0 & Self::ALL_CELLS_OCCUPIED_MASK == Self::ALL_CELLS_OCCUPIED_MASK
+    }
     fn is_available(&self, row: usize, col: usize) -> bool {
         let mask = 0b10u32 << (Self::CELL_BITS * Self::to_1d_idx(row, col));
         self.0 & mask == 0
@@ -122,22 +177,6 @@ impl Board {
         debug_assert_eq!(self.get(row, col), CellState::Free);
         let new_cell_state = player.cell_state();
         self.0 |= (new_cell_state as u32) << (Self::CELL_BITS * Self::to_1d_idx(row, col));
-    }
-
-    fn available_moves(mut self) -> impl Iterator<Item = (usize, usize)> {
-        debug_assert!(!self.is_empty());
-        let mut idx = 0;
-        // TODO: could generate all masks in advance and check them at the same time with SIMD
-        std::iter::from_fn(move || {
-            while idx != Self::N_CELLS {
-                if self.0 & 0b10 == 0 {
-                    return Some(Self::to_2d_idx(idx));
-                }
-                self.0 >>= Self::CELL_BITS;
-                idx += 1;
-            }
-            None
-        })
     }
 
     /// is also the expected '&' result if player2 wins
@@ -221,10 +260,6 @@ impl Board {
 
     fn calc_winner(&self) -> Option<Player> {
         let winner_masked = Self::WINNER_MASKS.map(|mask| mask & self.0);
-        println!("MERBUG board: {:#018b}", self.0);
-        for m in winner_masked {
-            println!("MERBUG mask result: {m:#018b}");
-        }
         for (i, winner_masked) in winner_masked.iter().enumerate() {
             if *winner_masked == Self::WINNER_MASKS[i] {
                 return Some(Player::Player2);
@@ -235,21 +270,51 @@ impl Board {
         None
     }
 
-    // fn evaluate_move(self, row: usize, col: usize, player: Player) -> f32 {
-    //     debug_assert_eq!(self.get(row, col), CellState::Free);
-    //     // start case is fixed, only choose the middle cell
-    //     if self.is_empty() {
-    //         if row == Self::ROWS / 2 && col == Self::COLS / 2 {
-    //             f32::MAX
-    //         } else {
-    //             0.
-    //         }
-    //     } else {
-    //         self.set(row, col, player);
-    //         for (row, col) in self.available_moves() {
-    //         }
-    //     }
-    // }
+    fn find_best_move(self, player: Player) -> (usize, usize) {
+        debug_assert_eq!(self.calc_winner(), None);
+        debug_assert!(!self.is_full());
+
+        // start case is fixed, only choose the center cell
+        if self.is_empty() {
+            return (Self::ROWS / 2, Self::COLS / 2);
+        }
+
+        let (best_move, _best_move_score) =
+            BoardMoveCalc::new().available_moves(&self).iter().fold(
+                ((0, 0), SCORE_LOSE),
+                |(best_move, best_move_score), curr_move| {
+                    let curr_move_score = self.evaluate_move(curr_move.0, curr_move.1, player);
+                    if curr_move_score > best_move_score {
+                        (*curr_move, curr_move_score)
+                    } else {
+                        (best_move, best_move_score)
+                    }
+                },
+            );
+
+        best_move
+    }
+
+    fn evaluate_move(mut self, row: usize, col: usize, player: Player) -> Score {
+        debug_assert_eq!(self.get(row, col), CellState::Free);
+        self.set(row, col, player);
+
+        match self.calc_winner() {
+            Some(our_player) if our_player == player => SCORE_WIN,
+            Some(_other_player) => SCORE_LOSE,
+            None if self.is_full() => 0,
+            _ => {
+                let other_player = player.other();
+                -BoardMoveCalc::new()
+                    .available_moves(&self)
+                    .iter()
+                    .map(|(next_row, next_col)| {
+                        self.evaluate_move(*next_row, *next_col, other_player)
+                    })
+                    .sum::<Score>()
+            }
+        }
+    }
 }
 
 fn main() {
@@ -285,7 +350,7 @@ fn main() {
 
 #[cfg(test)]
 mod test {
-    use crate::{Board, CellState, Player};
+    use crate::{Board, BoardMoveCalc, CellState, Player};
 
     #[test]
     /// verify we are truly col-major as all the bitmasks rely on it
@@ -481,5 +546,36 @@ mod test {
             [Player2, Player1, Player1],
         ]);
         assert_eq!(board.calc_winner(), Some(Player::Player2));
+    }
+
+    #[test]
+    fn test_available_moves() {
+        use CellState::{Free, Player1, Player2};
+        let mut move_iter = BoardMoveCalc::new();
+        let board = Board::from_matrix([
+            [Free, Free, Player1],
+            [Player2, Player1, Player2],
+            [Player1, Player1, Player2],
+        ]);
+        let moves = move_iter.available_moves(&board);
+        assert_eq!(moves.len(), 2);
+        assert_eq!(moves[0], (0, 0));
+        assert_eq!(moves[1], (0, 1));
+
+        let board =
+            Board::from_matrix([[Free, Free, Free], [Free, Free, Free], [Free, Free, Free]]);
+        let moves = move_iter.available_moves(&board);
+        assert_eq!(moves.len(), 9);
+        for (idx, move_) in moves.iter().enumerate() {
+            assert_eq!(*move_, Board::to_2d_idx(idx))
+        }
+
+        let board = Board::from_matrix([
+            [Player2, Player1, Player1],
+            [Player2, Player1, Player2],
+            [Player1, Player1, Player2],
+        ]);
+        let moves = move_iter.available_moves(&board);
+        assert_eq!(moves.len(), 0);
     }
 }
