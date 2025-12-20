@@ -9,7 +9,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     let empty = Board::default();
     let move_calc = &mut BoardMoveFinder::default();
     c.bench_function("move scores on empty board", |b| {
-        b.iter(|| empty.find_best_move_score(move_calc, black_box(Player::Player1)))
+        b.iter(|| empty.find_best_move_score(black_box(Player::Player1), move_calc))
     });
 }
 
