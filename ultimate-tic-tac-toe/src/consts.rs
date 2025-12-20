@@ -1,5 +1,5 @@
 use crate::{
-    types::{BoardState, Index, Score},
+    types::{BoardState, Index, Move, Score},
     util::const_concat,
 };
 
@@ -10,6 +10,18 @@ pub const CELL_BITS: usize = 2;
 pub const COLS: Index = 3;
 pub const ROWS: Index = COLS;
 pub const N_CELLS: Index = COLS * ROWS;
+
+pub const LOOKUP_1D_TO_2D: [Move; N_CELLS] = {
+    let mut lookup = [(0, 0); N_CELLS];
+    let mut one_d_idx = 0;
+    while one_d_idx != N_CELLS {
+        let row = one_d_idx % COLS;
+        let col = one_d_idx / COLS;
+        lookup[one_d_idx] = (row, col);
+        one_d_idx += 1;
+    }
+    lookup
+};
 
 #[allow(clippy::unusual_byte_groupings)]
 //                                      8   7 6  5 4  3 2  1 0

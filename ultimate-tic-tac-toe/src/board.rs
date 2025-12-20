@@ -1,6 +1,6 @@
 use crate::{
     board::move_finder::BoardMoveFinder,
-    consts,
+    consts::{self, LOOKUP_1D_TO_2D},
     types::{BoardState, CellState, Index, Move, Player, Score},
 };
 
@@ -48,9 +48,7 @@ impl Board {
     pub(crate) fn to_2d_idx(one_d_idx: Index) -> Move {
         debug_assert!(one_d_idx < consts::N_CELLS);
 
-        let row = one_d_idx % consts::COLS;
-        let col = one_d_idx / consts::COLS;
-        (row, col)
+        LOOKUP_1D_TO_2D[one_d_idx]
     }
     pub fn get(&self, row: Index, col: Index) -> CellState {
         let bits = ((self.0 >> (consts::CELL_BITS * Self::to_1d_idx(row, col))) & 0b11) as u8;
