@@ -3,4 +3,9 @@ name = "ultimate-tic-tac-toe"
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "calc_winner"
+harness = false
