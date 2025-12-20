@@ -9,8 +9,8 @@ use ultimate_tic_tac_toe::{
 fn main() {
     let empty_board = Board::new();
     let move_calc = &mut BoardMoveFinder::new();
-    let scores = empty_board
-        .find_move_scores(black_box(move_calc), black_box(Player::Player1))
+    let _scores = empty_board
+        .find_move_scores(black_box(Player::Player1), black_box(move_calc))
         .collect::<HashMap<_, _>>();
-    // println!("scores (column-major) {scores:#?}",)
+    // println!("scores (column-major) {_scores:#?}",)
 }

@@ -1,41 +1,54 @@
 use crate::{
     board::Board,
     consts,
-    types::{BoardState, Move},
+    types::{BoardState, Index, Move},
 };
+
+pub(crate) fn get_availble_bits_contiguous(board_state: BoardState) -> BoardState {
+    // 'compress' the board layout so we only have every second bit (= !is_available) left
+    //  and placed contiguously at the start of the result
+    // safety:
+    // - check this feature is available in main
+    // - no memory accesses or unexpected mutations just bit magic on `board_state`
+    let not_available_bits_contiguous =
+        unsafe { core::arch::x86_64::_pext_u32(board_state, consts::ALL_CELLS_OCCUPIED_MASK) };
+    !not_available_bits_contiguous & 0b1_1111_1111
+}
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BoardMoveFinder {
-    // TODO PERF: probably 0 pad for SIMD
     moves_buf: [Move; consts::N_CELLS],
 }
 
 impl BoardMoveFinder {
-    const AVAILABLE_MASKS: [u32; consts::N_CELLS] = {
-        let mut masks = [0; consts::N_CELLS];
-        let mut idx = 0;
-        while idx != masks.len() {
-            masks[idx] = 0b10 << (idx * consts::CELL_BITS);
-            idx += 1;
-        }
-
-        masks
-    };
-
     pub fn new() -> Self {
         Self::default()
     }
 
+    // credit to https://www.chessprogramming.org/BMI2
     pub fn available_moves(&mut self, board_state: BoardState) -> &[Move] {
-        let is_available_results = Self::AVAILABLE_MASKS.map(|mask| (mask & board_state) == 0);
-        let mut available_moves_idx = 0;
-        for (cell_index, is_available) in is_available_results.into_iter().enumerate() {
-            if is_available {
-                self.moves_buf[available_moves_idx] = Board::to_2d_idx(cell_index);
-                available_moves_idx += 1;
-            }
+        let mut available_bits_contiguous = get_availble_bits_contiguous(board_state);
+        let mut found_moves_idx = 0;
+        // almost branchless come @ me :)
+        while available_bits_contiguous != 0 {
+            //   0bX100   & 0bX011   = 0bX000
+            //   0bXY01   & 0bXY00   = 0bXY00
+            //   0bXY10   & 0bXY01   = 0bXY00
+            //   0bXY11   & 0bXY10   = 0bXY10
+            //
+            // example:
+            //   0b0_0000_1010 -> trailing zeroes = 1
+            // & 0b0_0000_1001
+            // = 0b0_0000_1000 -> trailing zeroes = 3
+            // & 0b0_0000_0111
+            // = 0b0_0000_0000 -> finished
+            let available_cell_index = available_bits_contiguous.trailing_zeros();
+            self.moves_buf[found_moves_idx] = Board::to_2d_idx(available_cell_index as Index);
+
+            found_moves_idx += 1;
+            available_bits_contiguous &= available_bits_contiguous - 1;
         }
-        &self.moves_buf[..available_moves_idx]
+        &self.moves_buf[..found_moves_idx]
     }
 }
 
