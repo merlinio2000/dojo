@@ -86,7 +86,7 @@ impl Board {
     }
 
     #[inline]
-    pub(crate) fn find_move_scores(
+    pub fn find_move_scores(
         self,
         move_calc: &mut BoardMoveFinder,
         player: Player,

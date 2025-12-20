@@ -2,6 +2,12 @@
 resolver = "3"
 members = ["parti-prod", "scramble", "ultimate-tic-tac-toe"]
 
+[profile.release]
+debug = true
+
+# inherits from release
+[profile.bench]
+
 [workspace.dependencies]
 anyhow = { version = "1.0.79", features = ["backtrace"] }
 criterion = { version = "0.8", features = ["html_reports"] }

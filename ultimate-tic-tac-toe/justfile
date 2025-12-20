@@ -1,0 +1,10 @@
+
+r:
+    cargo r
+t:
+    cargo t
+l:
+    cargo c
+
+flamegraph:
+    cargo flamegraph --example empty_board_scores
