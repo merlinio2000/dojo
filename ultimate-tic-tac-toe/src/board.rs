@@ -93,7 +93,7 @@ impl Board {
         player: Player,
         move_calc: &mut BoardMoveFinder,
     ) -> impl ExactSizeIterator<Item = (Move, Score)> {
-        let mut inner_move_calc = *move_calc;
+        let mut inner_move_calc = BoardMoveFinder::default();
         move_calc
             .available_moves(self.0)
             .iter()
@@ -158,7 +158,7 @@ impl Board {
             None if self.is_full() => 0,
             _ => {
                 let other_player = player.other();
-                let mut inner_move_calc = *move_calc;
+                let mut inner_move_calc = BoardMoveFinder::default();
                 -move_calc
                     .available_moves(self.0)
                     .iter()
