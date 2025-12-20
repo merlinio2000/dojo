@@ -1,7 +1,4 @@
-use ultimate_tic_tac_toe::{
-    board::{Board, move_finder::BoardMoveFinder},
-    types::Player,
-};
+use ultimate_tic_tac_toe::{board::Board, types::Player};
 
 #[allow(unused)]
 fn run_v1() {
@@ -12,8 +9,6 @@ fn run_v1() {
         std::io::stdin().read_line(buf).unwrap();
     };
     let mut my_player = Player::Player2;
-
-    let move_calc = &mut BoardMoveFinder::default();
 
     loop {
         read_line_buffered(&mut input);
@@ -42,7 +37,7 @@ fn run_v1() {
             board.set(opp_row as usize, opp_col as usize, my_player.other());
         }
 
-        let (row, col) = board.find_best_move(move_calc, my_player);
+        let (row, col) = board.find_best_move(my_player);
         board.set(row, col, my_player);
         println!("{row} {col}");
     }

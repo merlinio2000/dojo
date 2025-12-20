@@ -11,6 +11,7 @@ pub const COLS: Index = 3;
 pub const ROWS: Index = COLS;
 pub const N_CELLS: Index = COLS * ROWS;
 
+// TODO PERF: verify that this is actually an improvement
 pub const LOOKUP_1D_TO_2D: [Move; N_CELLS] = {
     let mut lookup = [(0, 0); N_CELLS];
     let mut one_d_idx = 0;

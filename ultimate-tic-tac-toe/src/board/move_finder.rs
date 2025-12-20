@@ -1,13 +1,30 @@
 use crate::{
     board::Board,
     consts,
-    types::{BoardState, Move},
+    types::{BoardState, Index, Move},
 };
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct BoardMoveFinder {
-    // TODO PERF: probably 0 pad for SIMD
-    moves_buf: [Move; consts::N_CELLS],
+    is_available_bitset: BoardState,
+    index: Index,
+}
+
+impl Iterator for BoardMoveFinder {
+    type Item = Move;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.is_available_bitset != 0 {
+            let is_available = self.is_available_bitset & 1 == 1;
+            let curr_index = self.index;
+            self.is_available_bitset >>= 1;
+            self.index += 1;
+            if is_available {
+                return Some(Board::to_2d_idx(curr_index));
+            }
+        }
+        None
+    }
 }
 
 impl BoardMoveFinder {
@@ -22,20 +39,21 @@ impl BoardMoveFinder {
         masks
     };
 
-    pub fn new() -> Self {
-        Self::default()
-    }
+    pub fn new(board_state: BoardState) -> Self {
+        let mut is_available_bitset: BoardState = 0;
 
-    pub fn available_moves(&mut self, board_state: BoardState) -> &[Move] {
-        let is_available_results = Self::AVAILABLE_MASKS.map(|mask| (mask & board_state) == 0);
-        let mut available_moves_idx = 0;
-        for (cell_index, is_available) in is_available_results.into_iter().enumerate() {
-            if is_available {
-                self.moves_buf[available_moves_idx] = Board::to_2d_idx(cell_index);
-                available_moves_idx += 1;
-            }
+        for is_available in Self::AVAILABLE_MASKS
+            .iter()
+            .rev()
+            .map(|mask| (mask & board_state) == 0)
+        {
+            is_available_bitset = (is_available_bitset << 1) + is_available as u32;
         }
-        &self.moves_buf[..available_moves_idx]
+
+        Self {
+            index: 0,
+            is_available_bitset,
+        }
     }
 }
 
@@ -49,20 +67,21 @@ mod test {
     #[test]
     fn test_available_moves() {
         use CellState::{Free, Player1, Player2};
-        let mut move_iter = BoardMoveFinder::new();
         let board = Board::from_matrix([
             [Free, Free, Player1],
             [Player2, Player1, Player2],
             [Player1, Player1, Player2],
         ]);
-        let moves = move_iter.available_moves(board.0);
+        let move_iter = BoardMoveFinder::new(board.0);
+        let moves = move_iter.collect::<Vec<_>>();
         assert_eq!(moves.len(), 2);
         assert_eq!(moves[0], (0, 0));
         assert_eq!(moves[1], (0, 1));
 
         let board =
             Board::from_matrix([[Free, Free, Free], [Free, Free, Free], [Free, Free, Free]]);
-        let moves = move_iter.available_moves(board.0);
+        let move_iter = BoardMoveFinder::new(board.0);
+        let moves = move_iter.collect::<Vec<_>>();
         assert_eq!(moves.len(), 9);
         for (idx, move_) in moves.iter().enumerate() {
             assert_eq!(*move_, Board::to_2d_idx(idx))
@@ -73,7 +92,8 @@ mod test {
             [Player2, Player1, Player2],
             [Player1, Player1, Player2],
         ]);
-        let moves = move_iter.available_moves(board.0);
+        let move_iter = BoardMoveFinder::new(board.0);
+        let moves = move_iter.collect::<Vec<_>>();
         assert_eq!(moves.len(), 0);
 
         let board = Board::from_matrix([
@@ -81,7 +101,8 @@ mod test {
             [Free, Free, Free],
             [Free, Free, Free],
         ]);
-        let moves = move_iter.available_moves(board.0);
+        let move_iter = BoardMoveFinder::new(board.0);
+        let moves = move_iter.collect::<Vec<_>>();
         assert_eq!(moves.len(), 8);
         assert!(moves.iter().all(|move_| *move_ != (0, 0)));
     }
