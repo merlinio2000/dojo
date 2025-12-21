@@ -13,26 +13,24 @@ pub(crate) fn get_availble_bits_contiguous(board_state: BoardState) -> BoardStat
         // safety:
         // - check this feature is available in main
         // - no memory accesses or unexpected mutations just bit magic on `board_state`
-        let not_available_bits_contiguous =
-            unsafe { core::arch::x86_64::_pext_u32(board_state, consts::ALL_CELLS_OCCUPIED_MASK) };
-        !not_available_bits_contiguous & 0b1_1111_1111
+        unsafe { core::arch::x86_64::_pext_u32(!board_state, consts::ALL_CELLS_OCCUPIED_MASK) }
     } else {
-        let mut occupied_bits = board_state & consts::ALL_CELLS_OCCUPIED_MASK;
+        let mut available_bits = !board_state & consts::ALL_CELLS_OCCUPIED_MASK;
         debug_assert_eq!(
-            size_of_val(&occupied_bits),
+            size_of_val(&available_bits),
             4,
             "bit magic is only implemented for up to 32bit ints"
         );
         // (1010_1010_1010_1010 | 0101_0101_0101_0101) & 0011_0011_0011_0011 = 0011_0011_0011_0011
-        occupied_bits = (occupied_bits | (occupied_bits >> 1)) & 0x33333333;
+        available_bits = (available_bits | (available_bits >> 1)) & 0x33333333;
         // (0011_0011_0011_0011 | 0000_1100_1100_1100) & 0000_1111_0000_1111 = 0000_1111_0000_1111
-        occupied_bits = (occupied_bits | (occupied_bits >> 2)) & 0x0f0f0f0f;
+        available_bits = (available_bits | (available_bits >> 2)) & 0x0f0f0f0f;
         // (0000_1111_0000_1111 | 0000_0000_1111_0000) & 0000_0000_1111_1111 = 0000_0000_1111_1111
-        occupied_bits = (occupied_bits | (occupied_bits >> 4)) & 0x00ff00ff;
+        available_bits = (available_bits | (available_bits >> 4)) & 0x00ff00ff;
         // (0000_0000_1111_1111 | 0000_0000_0000_0000) & 1111_1111_1111_1111 = 0000_0000_1111_1111
-        occupied_bits = (occupied_bits | (occupied_bits >> 8)) & 0x0000ffff;
+        available_bits = (available_bits | (available_bits >> 8)) & 0x0000ffff;
 
-        occupied_bits
+        available_bits
     }
 }
 
