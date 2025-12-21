@@ -9,13 +9,13 @@ use crate::{
 
 #[derive(Debug, Clone, Copy)]
 pub struct BoardMoveFinder {
-    moves_buf: [MaybeUninit<Move>; consts::N_CELLS],
+    moves_buf: [MaybeUninit<Move>; consts::N_CELLS as usize],
 }
 
 impl Default for BoardMoveFinder {
     fn default() -> Self {
         Self {
-            moves_buf: [MaybeUninit::uninit(); consts::N_CELLS],
+            moves_buf: [MaybeUninit::uninit(); consts::N_CELLS as usize],
         }
     }
 }
@@ -69,7 +69,7 @@ impl BoardMoveFinder {
 mod test {
     use crate::{
         board::{Board, move_finder::BoardMoveFinder},
-        types::CellState,
+        types::{CellState, Index},
     };
 
     #[test]
@@ -91,7 +91,7 @@ mod test {
         let moves = move_iter.available_moves(board.0);
         assert_eq!(moves.len(), 9);
         for (idx, move_) in moves.iter().enumerate() {
-            assert_eq!(*move_, Board::to_2d_idx(idx))
+            assert_eq!(*move_, Board::to_2d_idx(idx as Index))
         }
 
         let board = Board::from_matrix([

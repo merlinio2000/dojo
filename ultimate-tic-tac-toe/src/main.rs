@@ -1,6 +1,6 @@
 use ultimate_tic_tac_toe::{
     board::{Board, move_finder::BoardMoveFinder},
-    types::Player,
+    types::{Index, Player},
 };
 
 #[allow(unused)]
@@ -39,7 +39,7 @@ fn run_v1() {
         if opp_row == -1 {
             my_player = Player::Player1;
         } else {
-            board.set(opp_row as usize, opp_col as usize, my_player.other());
+            board.set(opp_row as Index, opp_col as Index, my_player.other());
         }
 
         let (row, col) = board.find_best_move(my_player, move_calc);

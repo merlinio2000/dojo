@@ -26,14 +26,20 @@ impl Board {
     }
 
     #[allow(unused)]
-    pub fn from_matrix(matrix: [[CellState; consts::COLS]; consts::ROWS]) -> Self {
+    pub fn from_matrix(
+        matrix: [[CellState; consts::COLS as usize]; consts::ROWS as usize],
+    ) -> Self {
         let mut this = Self::new();
         for (row_idx, row) in matrix.into_iter().enumerate() {
             for (col_idx, cell) in row.into_iter().enumerate() {
                 match cell {
                     CellState::Free => {}
-                    CellState::Player1 => this.set(row_idx, col_idx, Player::Player1),
-                    CellState::Player2 => this.set(row_idx, col_idx, Player::Player2),
+                    CellState::Player1 => {
+                        this.set(row_idx as Index, col_idx as Index, Player::Player1)
+                    }
+                    CellState::Player2 => {
+                        this.set(row_idx as Index, col_idx as Index, Player::Player2)
+                    }
                 }
             }
         }
@@ -49,10 +55,11 @@ impl Board {
     pub(crate) fn to_2d_idx(one_d_idx: Index) -> Move {
         debug_assert!(one_d_idx < consts::N_CELLS);
 
-        LOOKUP_1D_TO_2D[one_d_idx]
+        LOOKUP_1D_TO_2D[one_d_idx as usize]
     }
     pub fn get(&self, row: Index, col: Index) -> CellState {
-        let bits = ((self.0 >> (consts::CELL_BITS * Self::to_1d_idx(row, col))) & 0b11) as u8;
+        let bits =
+            ((self.0 >> (consts::CELL_BITS * Self::to_1d_idx(row, col) as usize)) & 0b11) as u8;
         CellState::try_from(bits).expect("invalid bits for CellState")
     }
     pub fn is_empty(&self) -> bool {
@@ -63,13 +70,14 @@ impl Board {
     }
     #[expect(unused)]
     fn is_available(&self, row: Index, col: Index) -> bool {
-        let mask = 0b10 << (consts::CELL_BITS * Self::to_1d_idx(row, col));
+        let mask = 0b10 << (consts::CELL_BITS * Self::to_1d_idx(row, col) as usize);
         self.0 & mask == 0
     }
     pub fn set(&mut self, row: Index, col: Index, player: Player) {
         debug_assert_eq!(self.get(row, col), CellState::Free);
         let new_cell_state = player.cell_state();
-        self.0 |= (new_cell_state as BoardState) << (consts::CELL_BITS * Self::to_1d_idx(row, col));
+        self.0 |= (new_cell_state as BoardState)
+            << (consts::CELL_BITS * Self::to_1d_idx(row, col) as usize);
     }
     // NOTE PERF: avx/avx2 using 256bit registers have been evaluated but perform worse in this case
     // than the autovectorized code using `pand` `pcmpeqd` `packssdw` `pmovmskb`
@@ -136,8 +144,7 @@ impl Board {
         move_calc: &mut BoardMoveFinder,
     ) -> (Move, Score) {
         Self::find_move_scores(self, player, move_calc).fold(
-            // i32 for compatibility with other languages that parse to probably int
-            ((i32::MAX as Index, i32::MAX as Index), Score::MIN),
+            ((Index::MAX as Index, Index::MAX as Index), Score::MIN),
             |(best_move, best_move_score), (curr_move, curr_move_score)| {
                 if curr_move_score > best_move_score {
                     (curr_move, curr_move_score)

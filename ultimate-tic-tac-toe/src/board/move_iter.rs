@@ -48,7 +48,7 @@ impl BoardMoveIter {
 mod board_move_iter_test {
     use crate::{
         board::{Board, move_iter::BoardMoveIter},
-        types::CellState,
+        types::{CellState, Index},
     };
 
     #[test]
@@ -71,7 +71,7 @@ mod board_move_iter_test {
         let moves = move_iter.collect::<Vec<_>>();
         assert_eq!(moves.len(), 9);
         for (idx, move_) in moves.iter().enumerate() {
-            assert_eq!(*move_, Board::to_2d_idx(idx))
+            assert_eq!(*move_, Board::to_2d_idx(idx as Index))
         }
 
         let board = Board::from_matrix([

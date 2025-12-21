@@ -52,7 +52,7 @@ impl Player {
 
 pub type Score = i64;
 
-pub type Index = usize;
+pub type Index = u32;
 pub type Move = (Index, Index);
 
 /// For 256bit AVX2 loading
