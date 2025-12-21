@@ -32,14 +32,16 @@ pub enum Player {
     Player2 = 0b1,
 }
 impl Player {
-    // TODO PERF: could technically be just a `| 0b10`
+    // PERF: could technically be just a `| 0b10`
+    // asm shows this is already the case
     pub fn cell_state(&self) -> CellState {
         match self {
             Player::Player1 => CellState::Player1,
             Player::Player2 => CellState::Player2,
         }
     }
-    // TODO PERF: could technically be just a bitflip
+    // PERF: could technically be just a bitflip
+    // asm shows this is already the case
     pub fn other(&self) -> Player {
         match self {
             Player::Player1 => Player::Player2,

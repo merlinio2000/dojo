@@ -1,5 +1,6 @@
 use crate::{
-    board::{Board, move_finder::get_availble_bits_contiguous},
+    bitmagic,
+    board::Board,
     types::{BoardState, Index, Move},
 };
 
@@ -26,7 +27,7 @@ impl Iterator for BoardMoveIter {
             // = 0b0_0000_1000 -> trailing zeroes = 3
             // & 0b0_0000_0111
             // = 0b0_0000_0000 -> finished
-            let available_cell_index = self.is_available_bitset.trailing_zeros();
+            let available_cell_index = bitmagic::trailing_zeros(self.is_available_bitset);
 
             self.is_available_bitset &= self.is_available_bitset - 1;
             Some(Board::to_2d_idx(available_cell_index as Index))
@@ -36,7 +37,7 @@ impl Iterator for BoardMoveIter {
 
 impl BoardMoveIter {
     pub fn new(board_state: BoardState) -> Self {
-        let available_bits_contiguous = get_availble_bits_contiguous(board_state);
+        let available_bits_contiguous = bitmagic::get_availble_bits_contiguous(board_state);
         Self {
             is_available_bitset: available_bits_contiguous,
         }

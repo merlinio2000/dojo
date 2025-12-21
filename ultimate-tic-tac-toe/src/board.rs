@@ -26,7 +26,7 @@ impl Board {
     }
 
     #[allow(unused)]
-    fn from_matrix(matrix: [[CellState; consts::COLS]; consts::ROWS]) -> Self {
+    pub fn from_matrix(matrix: [[CellState; consts::COLS]; consts::ROWS]) -> Self {
         let mut this = Self::new();
         for (row_idx, row) in matrix.into_iter().enumerate() {
             for (col_idx, cell) in row.into_iter().enumerate() {

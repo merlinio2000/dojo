@@ -49,7 +49,8 @@ fn run_v1() {
 }
 
 fn main() {
-    if !std::is_x86_feature_detected!("bmi2") {
-        panic!("must run on x86 with bmi2")
-    }
+    assert!(std::is_x86_feature_detected!("bmi1"));
+    assert!(std::is_x86_feature_detected!("bmi2"));
+    assert!(std::is_x86_feature_detected!("avx"));
+    assert!(std::is_x86_feature_detected!("avx2"));
 }

@@ -1,38 +1,11 @@
 use std::mem::MaybeUninit;
 
 use crate::{
+    bitmagic::{self},
     board::Board,
     consts,
     types::{BoardState, Index, Move},
 };
-
-pub(crate) fn get_availble_bits_contiguous(board_state: BoardState) -> BoardState {
-    // 'compress' the board layout so we only have every second bit (= !is_available) left
-    //  and placed contiguously at the start of the result
-    if is_x86_feature_detected!("bmi2") {
-        // safety:
-        // - check this feature is available in main
-        // - no memory accesses or unexpected mutations just bit magic on `board_state`
-        unsafe { core::arch::x86_64::_pext_u32(!board_state, consts::ALL_CELLS_OCCUPIED_MASK) }
-    } else {
-        let mut available_bits = !board_state & consts::ALL_CELLS_OCCUPIED_MASK;
-        debug_assert_eq!(
-            size_of_val(&available_bits),
-            4,
-            "bit magic is only implemented for up to 32bit ints"
-        );
-        // (1010_1010_1010_1010 | 0101_0101_0101_0101) & 0011_0011_0011_0011 = 0011_0011_0011_0011
-        available_bits = (available_bits | (available_bits >> 1)) & 0x33333333;
-        // (0011_0011_0011_0011 | 0000_1100_1100_1100) & 0000_1111_0000_1111 = 0000_1111_0000_1111
-        available_bits = (available_bits | (available_bits >> 2)) & 0x0f0f0f0f;
-        // (0000_1111_0000_1111 | 0000_0000_1111_0000) & 0000_0000_1111_1111 = 0000_0000_1111_1111
-        available_bits = (available_bits | (available_bits >> 4)) & 0x00ff00ff;
-        // (0000_0000_1111_1111 | 0000_0000_0000_0000) & 1111_1111_1111_1111 = 0000_0000_1111_1111
-        available_bits = (available_bits | (available_bits >> 8)) & 0x0000ffff;
-
-        available_bits
-    }
-}
 
 #[derive(Debug, Clone, Copy)]
 pub struct BoardMoveFinder {
@@ -54,7 +27,7 @@ impl BoardMoveFinder {
 
     // credit to https://www.chessprogramming.org/BMI2
     pub fn available_moves(&mut self, board_state: BoardState) -> &[Move] {
-        let mut available_bits_contiguous = get_availble_bits_contiguous(board_state);
+        let mut available_bits_contiguous = bitmagic::get_availble_bits_contiguous(board_state);
         let mut found_moves_idx = 0;
         // almost branchless come @ me :)
         while available_bits_contiguous != 0 {
@@ -69,7 +42,7 @@ impl BoardMoveFinder {
             // = 0b0_0000_1000 -> trailing zeroes = 3
             // & 0b0_0000_0111
             // = 0b0_0000_0000 -> finished
-            let available_cell_index = available_bits_contiguous.trailing_zeros();
+            let available_cell_index = bitmagic::trailing_zeros(available_bits_contiguous);
             self.moves_buf[found_moves_idx] =
                 MaybeUninit::new(Board::to_2d_idx(available_cell_index as Index));
 
