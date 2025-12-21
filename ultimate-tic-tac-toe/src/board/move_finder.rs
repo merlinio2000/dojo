@@ -24,9 +24,20 @@ impl BoardMoveFinder {
     pub fn new() -> Self {
         Self::default()
     }
-
-    // credit to https://www.chessprogramming.org/BMI2
     pub fn available_moves(&mut self, board_state: BoardState) -> &[Move] {
+        //
+        unsafe { self.available_moves_inner(board_state) }
+    }
+
+    /// # Safety
+    /// requires x86 extensions
+    /// - bmi1
+    /// - bmi2
+    ///
+    /// credit to https://www.chessprogramming.org/BMI2
+    #[target_feature(enable = "bmi1")]
+    #[target_feature(enable = "bmi2")]
+    pub fn available_moves_inner(&mut self, board_state: BoardState) -> &[Move] {
         let mut available_bits_contiguous = bitmagic::get_availble_bits_contiguous(board_state);
         let mut found_moves_idx = 0;
         // almost branchless come @ me :)
