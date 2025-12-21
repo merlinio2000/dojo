@@ -54,3 +54,7 @@ pub type Score = i64;
 
 pub type Index = usize;
 pub type Move = (Index, Index);
+
+/// For 256bit AVX2 loading
+#[repr(align(32))]
+pub struct Aligned32<T, const N: usize>(pub [T; N]);
