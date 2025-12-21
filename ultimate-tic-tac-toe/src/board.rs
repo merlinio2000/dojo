@@ -104,8 +104,23 @@ impl Board {
             })
     }
 
-    #[inline]
+    /// TODO: make unsafe
     pub fn find_best_move_score(
+        self,
+        player: Player,
+        move_calc: &mut BoardMoveFinder,
+    ) -> (Move, Score) {
+        // safety: this is done for CPU features which are asserted in main
+        unsafe { self.find_best_move_score_inner(player, move_calc) }
+    }
+
+    /// # Safety:
+    /// requires cpu features:
+    /// - bmi1
+    /// - bmi2
+    #[target_feature(enable = "bmi1")]
+    #[target_feature(enable = "bmi2")]
+    unsafe fn find_best_move_score_inner(
         self,
         player: Player,
         move_calc: &mut BoardMoveFinder,
@@ -137,6 +152,7 @@ impl Board {
             return (consts::ROWS / 2, consts::COLS / 2);
         }
 
+        // safety: main asserts the features are available
         let (best_move, _best_move_score) = Self::find_best_move_score(self, player, move_calc);
 
         best_move

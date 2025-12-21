@@ -11,8 +11,9 @@ pub(crate) const fn trailing_zeros(bits: u32) -> u32 {
 }
 
 /// safety: make sure this is run on x86-64 with bmi1 enabled
+// #[target_feature(enable = "bmi1")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "bmi1")]
+#[inline(always)]
 const unsafe fn trailing_zeros_x86_bmi1(bits: u32) -> u32 {
     // NOTE: the bmi1 feature ensures this is compiled to tzcnt
     bits.trailing_zeros()
@@ -24,13 +25,14 @@ const fn trailing_zeros_fallback(bits: u32) -> u32 {
 }
 
 /// safety: make sure this is run on x86-64 with bmi2 enabled
+// #[target_feature(enable = "bmi2")]
 #[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "bmi2")]
+#[inline(always)]
 unsafe fn get_availble_bits_contiguous_x86_bmi2(board_state: u32) -> u32 {
     use crate::consts;
 
     debug_assert!(is_x86_feature_detected!("bmi2"));
-    core::arch::x86_64::_pext_u32(!board_state, consts::ALL_CELLS_OCCUPIED_MASK)
+    unsafe { core::arch::x86_64::_pext_u32(!board_state, consts::ALL_CELLS_OCCUPIED_MASK) }
 }
 
 #[allow(unused)]
