@@ -7,4 +7,4 @@ l:
     cargo c
 
 flamegraph:
-    cargo flamegraph --example empty_board_scores
+    cargo flamegraph --release --example flamegraph
