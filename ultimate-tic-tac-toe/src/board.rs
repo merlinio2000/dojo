@@ -359,7 +359,7 @@ mod test {
         let board = Board::from_matrix([
             [Player1, Player1, Player1],
             [Player2, Player1, Player2],
-            [Player2, Player2, Player2],
+            [Player2, Free, Player2],
         ]);
         assert_eq!(board.calc_winner(), Some(Player::Player1));
     }
