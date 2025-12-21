@@ -1,3 +1,5 @@
+use std::mem::MaybeUninit;
+
 use crate::{
     board::Board,
     consts,
@@ -34,9 +36,17 @@ pub(crate) fn get_availble_bits_contiguous(board_state: BoardState) -> BoardStat
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct BoardMoveFinder {
-    moves_buf: [Move; consts::N_CELLS],
+    moves_buf: [MaybeUninit<Move>; consts::N_CELLS],
+}
+
+impl Default for BoardMoveFinder {
+    fn default() -> Self {
+        Self {
+            moves_buf: [MaybeUninit::uninit(); consts::N_CELLS],
+        }
+    }
 }
 
 impl BoardMoveFinder {
@@ -62,12 +72,14 @@ impl BoardMoveFinder {
             // & 0b0_0000_0111
             // = 0b0_0000_0000 -> finished
             let available_cell_index = available_bits_contiguous.trailing_zeros();
-            self.moves_buf[found_moves_idx] = Board::to_2d_idx(available_cell_index as Index);
+            self.moves_buf[found_moves_idx] =
+                MaybeUninit::new(Board::to_2d_idx(available_cell_index as Index));
 
             found_moves_idx += 1;
             available_bits_contiguous &= available_bits_contiguous - 1;
         }
-        &self.moves_buf[..found_moves_idx]
+        // safety: all items up to `found_moves_idx` have been initialised in the while
+        unsafe { std::mem::transmute(&self.moves_buf[..found_moves_idx]) }
     }
 }
 
