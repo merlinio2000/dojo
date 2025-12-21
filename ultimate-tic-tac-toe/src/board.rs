@@ -1,5 +1,3 @@
-use std::arch::x86_64::{self, _mm256_and_si256, _mm256_set_epi32, _mm256_set1_epi32};
-
 use crate::{
     board::move_finder::BoardMoveFinder,
     consts::{self, LOOKUP_1D_TO_2D},
@@ -73,69 +71,28 @@ impl Board {
         let new_cell_state = player.cell_state();
         self.0 |= (new_cell_state as BoardState) << (consts::CELL_BITS * Self::to_1d_idx(row, col));
     }
-    #[target_feature(enable = "avx")]
-    #[target_feature(enable = "avx2")]
-    unsafe fn calc_winner_x86_avx2(&self) -> Option<Player> {
-        debug_assert_eq!(consts::WINNER_MASKS.len(), 8);
-        debug_assert_eq!(
-            consts::MASK_RESULTS_PLAYER1.len(),
-            consts::WINNER_MASKS.len()
-        );
-
-        let winner_masks_simd = _mm256_set_epi32(
-            consts::WINNER_MASKS[0] as i32,
-            consts::WINNER_MASKS[1] as i32,
-            consts::WINNER_MASKS[2] as i32,
-            consts::WINNER_MASKS[3] as i32,
-            consts::WINNER_MASKS[4] as i32,
-            consts::WINNER_MASKS[5] as i32,
-            consts::WINNER_MASKS[6] as i32,
-            consts::WINNER_MASKS[7] as i32,
-        );
-        // let winner_masks_simd =
-        // _mm256_load_si256(WINNER_MASKS_FOR_SIMD.0.as_ptr() as *const __m256i);
-        let boards_simd = _mm256_set1_epi32(self.0 as i32);
-        let mask_results_simd = _mm256_and_si256(winner_masks_simd, boards_simd);
-        // 0xFFFF_FFFF in every EQ lane
-        let mask_results_eq_player2_simd =
-            x86_64::_mm256_cmpeq_epi32(mask_results_simd, winner_masks_simd);
-        // == 1 if non of the 256 bits match
-        let player2_won_bitset =
-            x86_64::_mm256_testz_si256(mask_results_eq_player2_simd, mask_results_eq_player2_simd);
-
-        if player2_won_bitset == 0 {
+    // NOTE PERF: avx/avx2 using 256bit registers have been evaluated but perform worse in this case
+    // than the autovectorized code using `pand` `pcmpeqd` `packssdw` `pmovmskb`
+    fn calc_winner(&self) -> Option<Player> {
+        let mask_results = consts::WINNER_MASKS.map(|mask| mask & self.0);
+        // NOTE PERF: this might look like multiple loops but it vectorizes much better
+        // and there are NO loops in the generated assembly
+        if mask_results
+            .into_iter()
+            .enumerate()
+            .any(|(idx, result)| result == consts::WINNER_MASKS[idx])
+        {
             return Some(Player::Player2);
         }
 
-        let mask_results_player1_simd = _mm256_set_epi32(
-            consts::MASK_RESULTS_PLAYER1[0] as i32,
-            consts::MASK_RESULTS_PLAYER1[1] as i32,
-            consts::MASK_RESULTS_PLAYER1[2] as i32,
-            consts::MASK_RESULTS_PLAYER1[3] as i32,
-            consts::MASK_RESULTS_PLAYER1[4] as i32,
-            consts::MASK_RESULTS_PLAYER1[5] as i32,
-            consts::MASK_RESULTS_PLAYER1[6] as i32,
-            consts::MASK_RESULTS_PLAYER1[7] as i32,
-        );
-        // let mask_results_player1_simd =
-        //     _mm256_load_si256(MASK_RESULTS_PLAYER1_FOR_SIMD.0.as_ptr() as *const __m256i);
-        let mask_results_eq_player1_simd =
-            x86_64::_mm256_cmpeq_epi32(mask_results_simd, mask_results_player1_simd);
-        let player1_won_bitset =
-            x86_64::_mm256_testz_si256(mask_results_eq_player1_simd, mask_results_eq_player1_simd);
-
-        if player1_won_bitset == 0 {
+        if mask_results
+            .into_iter()
+            .enumerate()
+            .any(|(idx, result)| result == consts::MASK_RESULTS_PLAYER1[idx])
+        {
             return Some(Player::Player1);
         }
         None
-    }
-
-    fn calc_winner(&self) -> Option<Player> {
-        // safety: we assert the required features in main
-        #[cfg(target_arch = "x86_64")]
-        unsafe {
-            self.calc_winner_x86_avx2()
-        }
     }
 
     #[inline]
