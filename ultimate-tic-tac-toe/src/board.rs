@@ -1,5 +1,5 @@
 use crate::{
-    board::move_finder::BoardMoveFinder,
+    board::{move_finder::BoardMoveFinder, move_iter::BoardMoveIter},
     consts::{self, LOOKUP_1D_TO_2D},
     types::{BoardState, CellState, Index, Move, Player, Score},
 };
@@ -45,22 +45,25 @@ impl Board {
         }
         this
     }
-    // col major
+    /// col major
     fn to_1d_idx(row: Index, col: Index) -> Index {
         debug_assert!(row < consts::ROWS);
         debug_assert!(col < consts::COLS);
         row + (col * consts::ROWS)
     }
-    // col major
-    pub(crate) fn to_2d_idx(one_d_idx: Index) -> Move {
+    /// col major
+    pub fn to_2d_idx(one_d_idx: Index) -> Move {
         debug_assert!(one_d_idx < consts::N_CELLS);
 
         LOOKUP_1D_TO_2D[one_d_idx as usize]
     }
-    pub fn get(&self, row: Index, col: Index) -> CellState {
-        let bits =
-            ((self.0 >> (consts::CELL_BITS * Self::to_1d_idx(row, col) as usize)) & 0b11) as u8;
+    /// col major
+    pub(crate) fn get_1d(&self, idx: Index) -> CellState {
+        let bits = ((self.0 >> (consts::CELL_BITS * idx as usize)) & 0b11) as u8;
         CellState::try_from(bits).expect("invalid bits for CellState")
+    }
+    pub fn get(&self, row: Index, col: Index) -> CellState {
+        self.get_1d(Self::to_1d_idx(row, col))
     }
     pub fn is_empty(&self) -> bool {
         self.0 == 0
@@ -68,17 +71,29 @@ impl Board {
     fn is_full(&self) -> bool {
         self.0 & consts::ALL_CELLS_OCCUPIED_MASK == consts::ALL_CELLS_OCCUPIED_MASK
     }
-    #[expect(unused)]
-    fn is_available(&self, row: Index, col: Index) -> bool {
-        let mask = 0b10 << (consts::CELL_BITS * Self::to_1d_idx(row, col) as usize);
+    /// col-major
+    pub(crate) fn is_available_1d(&self, idx: Index) -> bool {
+        let mask = 0b10 << (consts::CELL_BITS * idx as usize);
         self.0 & mask == 0
     }
-    pub fn set(&mut self, row: Index, col: Index, player: Player) {
-        debug_assert_eq!(self.get(row, col), CellState::Free);
-        let new_cell_state = player.cell_state();
-        self.0 |= (new_cell_state as BoardState)
-            << (consts::CELL_BITS * Self::to_1d_idx(row, col) as usize);
+    #[expect(unused)]
+    pub(crate) fn is_available(&self, row: Index, col: Index) -> bool {
+        self.is_available_1d(Self::to_1d_idx(row, col))
     }
+    /// col major
+    pub(crate) fn set_1d(&mut self, idx: Index, player: Player) {
+        debug_assert_eq!(self.get_1d(idx), CellState::Free);
+        let new_cell_state = player.cell_state();
+        self.0 |= (new_cell_state as BoardState) << (consts::CELL_BITS * idx as usize);
+    }
+    pub fn set(&mut self, row: Index, col: Index, player: Player) {
+        self.set_1d(Self::to_1d_idx(row, col), player);
+    }
+
+    pub fn iter_moves(self) -> BoardMoveIter {
+        BoardMoveIter::new(self.0)
+    }
+
     // NOTE PERF: avx/avx2 using 256bit registers have been evaluated but perform worse in this case
     // than the autovectorized code using `pand` `pcmpeqd` `packssdw` `pmovmskb`
     fn calc_winner(&self) -> Option<Player> {
@@ -103,19 +118,27 @@ impl Board {
         None
     }
 
+    // NOTE PERF: avx/avx2 using 256bit registers have been evaluated but perform worse in this case
+    // than the autovectorized code using `pand` `pcmpeqd` `packssdw` `pmovmskb`
+    fn has_winner(&self) -> bool {
+        let mask_results = consts::WINNER_MASKS.map(|mask| mask & self.0);
+        mask_results.into_iter().enumerate().any(|(idx, result)| {
+            result == consts::WINNER_MASKS[idx] || result == consts::MASK_RESULTS_PLAYER1[idx]
+        })
+    }
+
     #[inline]
     pub fn find_move_scores(
         self,
         player: Player,
         move_calc: &mut BoardMoveFinder,
-    ) -> impl ExactSizeIterator<Item = (Move, Score)> {
+    ) -> impl ExactSizeIterator<Item = (Index, Score)> {
         let mut inner_move_calc = BoardMoveFinder::default();
         move_calc
             .available_moves(self.0)
             .iter()
             .map(move |curr_move| {
-                let curr_move_score =
-                    self.evaluate_move(curr_move.0, curr_move.1, player, &mut inner_move_calc);
+                let curr_move_score = self.evaluate_move(*curr_move, player, &mut inner_move_calc);
                 (*curr_move, curr_move_score)
             })
     }
@@ -125,7 +148,7 @@ impl Board {
         self,
         player: Player,
         move_calc: &mut BoardMoveFinder,
-    ) -> (Move, Score) {
+    ) -> (Index, Score) {
         // safety: this is done for CPU features which are asserted in main
         unsafe { self.find_best_move_score_inner(player, move_calc) }
     }
@@ -142,9 +165,9 @@ impl Board {
         self,
         player: Player,
         move_calc: &mut BoardMoveFinder,
-    ) -> (Move, Score) {
+    ) -> (Index, Score) {
         Self::find_move_scores(self, player, move_calc).fold(
-            ((Index::MAX as Index, Index::MAX as Index), Score::MIN),
+            (Index::MAX as Index, Score::MIN),
             |(best_move, best_move_score), (curr_move, curr_move_score)| {
                 if curr_move_score > best_move_score {
                     (curr_move, curr_move_score)
@@ -155,18 +178,19 @@ impl Board {
         )
     }
 
-    pub fn find_best_move(self, player: Player, move_calc: &mut BoardMoveFinder) -> Move {
+    pub fn find_best_move(self, player: Player, move_calc: &mut BoardMoveFinder) -> Index {
         debug_assert_eq!(
             self.calc_winner(),
             None,
             "there should be no winner when finding best move"
         );
         debug_assert!(!self.is_full(), "cannot find move on full board");
+        debug_assert_eq!(consts::N_CELLS / 2, 4);
 
         // start case is fixed, only choose the center cell
         // (negamax would arrive to the same conclusion)
         if self.is_empty() {
-            return (consts::ROWS / 2, consts::COLS / 2);
+            return 4;
         }
 
         // safety: main asserts the features are available
@@ -177,13 +201,12 @@ impl Board {
 
     fn evaluate_move(
         mut self,
-        row: Index,
-        col: Index,
+        idx: Index,
         player: Player,
         move_calc: &mut BoardMoveFinder,
     ) -> Score {
-        debug_assert_eq!(self.get(row, col), CellState::Free);
-        self.set(row, col, player);
+        debug_assert_eq!(self.get_1d(idx), CellState::Free);
+        self.set_1d(idx, player);
 
         match self.calc_winner() {
             Some(our_player) if our_player == player => consts::SCORE_WIN,
@@ -195,8 +218,8 @@ impl Board {
                 -move_calc
                     .available_moves(self.0)
                     .iter()
-                    .map(|(next_row, next_col)| {
-                        self.evaluate_move(*next_row, *next_col, other_player, &mut inner_move_calc)
+                    .map(|next_idx| {
+                        self.evaluate_move(*next_idx, other_player, &mut inner_move_calc)
                     })
                     .sum::<Score>()
             }
@@ -212,8 +235,12 @@ mod test {
     use crate::{
         board::{Board, move_finder::BoardMoveFinder},
         consts,
-        types::{CellState, Index, Player, Score},
+        types::{CellState, Index, Move, Player, Score},
     };
+
+    fn _2d(idx: Index) -> Move {
+        Board::to_2d_idx(idx)
+    }
 
     #[test]
     /// verify we are truly col-major as all the bitmasks rely on it
@@ -436,7 +463,7 @@ mod test {
             [Player2, Player1, Player2],
         ]);
         let best_move = board.find_best_move(Player::Player1, move_calc);
-        assert_eq!(best_move, (0, 0));
+        assert_eq!(_2d(best_move), (0, 0));
 
         let board = Board::from_matrix([
             [Player2, Player1, Player1],
@@ -444,7 +471,7 @@ mod test {
             [Player2, Player1, Player2],
         ]);
         let best_move = board.find_best_move(Player::Player1, move_calc);
-        assert_eq!(best_move, (1, 1));
+        assert_eq!(_2d(best_move), (1, 1));
     }
 
     #[test]
@@ -459,7 +486,7 @@ mod test {
             [Player2, Free, Player2],
         ]);
         let best_move = board.find_best_move(Player::Player2, move_calc);
-        assert_eq!(best_move, (2, 1));
+        assert_eq!(_2d(best_move), (2, 1));
     }
 
     #[test]
@@ -469,7 +496,7 @@ mod test {
         let empty = Board::new();
         let move_calc = &mut BoardMoveFinder::new();
         let (best_move, best_score) = empty.find_best_move_score(Player::Player1, move_calc);
-        assert_eq!(best_move, (1, 1));
+        assert_eq!(_2d(best_move), (1, 1));
         assert!(best_score >= 0);
 
         let only_center = Board::from_matrix([
@@ -479,8 +506,10 @@ mod test {
         ]);
 
         for (board, name) in [(empty, "empty"), (only_center, "only_center")] {
-            let scores: HashMap<_, _> =
-                board.find_move_scores(Player::Player1, move_calc).collect();
+            let scores: HashMap<_, _> = board
+                .find_move_scores(Player::Player1, move_calc)
+                .map(|(move_, score)| (_2d(move_), score))
+                .collect();
             // equal corners on empty board
             let msg = format!("corners should equal to each other for board type: '{name}'");
             assert_eq!(scores.get(&(0, 0)), scores.get(&(0, 2)), "{msg}");
@@ -507,7 +536,10 @@ mod test {
         ]);
         let move_calc = &mut BoardMoveFinder::new();
 
-        let scores: HashMap<_, _> = board.find_move_scores(Player::Player2, move_calc).collect();
+        let scores: HashMap<_, _> = board
+            .find_move_scores(Player::Player2, move_calc)
+            .map(|(move_, score)| (_2d(move_), score))
+            .collect();
         // equal corners on empty board
         assert_eq!(scores.get(&(0, 0)), scores.get(&(0, 2)));
         assert_eq!(scores.get(&(0, 0)), scores.get(&(2, 0)));
@@ -543,8 +575,10 @@ mod test {
 
         let move_calc = &mut BoardMoveFinder::new();
         for (idx, board) in [board0, board1, board2, board3].iter().enumerate() {
-            let scores: HashMap<_, _> =
-                board.find_move_scores(Player::Player1, move_calc).collect();
+            let scores: HashMap<_, _> = board
+                .find_move_scores(Player::Player1, move_calc)
+                .map(|(move_, score)| (_2d(move_), score))
+                .collect();
             let get_row =
                 |row: Index| [0, 1, 2].map(|col| scores.get(&(row, col)).unwrap_or(&Score::MIN));
 

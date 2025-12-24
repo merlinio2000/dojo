@@ -1,7 +1,6 @@
 use crate::{
     bitmagic,
-    board::Board,
-    types::{BoardState, Index, Move},
+    types::{BoardState, Index},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -10,7 +9,7 @@ pub struct BoardMoveIter {
 }
 
 impl Iterator for BoardMoveIter {
-    type Item = Move;
+    type Item = Index;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.is_available_bitset == 0 {
@@ -30,7 +29,7 @@ impl Iterator for BoardMoveIter {
             let available_cell_index = bitmagic::trailing_zeros(self.is_available_bitset);
 
             self.is_available_bitset &= self.is_available_bitset - 1;
-            Some(Board::to_2d_idx(available_cell_index as Index))
+            Some(available_cell_index as Index)
         }
     }
 }
@@ -62,8 +61,8 @@ mod board_move_iter_test {
         let move_iter = BoardMoveIter::new(board.0);
         let moves = move_iter.collect::<Vec<_>>();
         assert_eq!(moves.len(), 2);
-        assert_eq!(moves[0], (0, 0));
-        assert_eq!(moves[1], (0, 1));
+        assert_eq!(moves[0], 0);
+        assert_eq!(moves[1], 3);
 
         let board =
             Board::from_matrix([[Free, Free, Free], [Free, Free, Free], [Free, Free, Free]]);
@@ -71,7 +70,7 @@ mod board_move_iter_test {
         let moves = move_iter.collect::<Vec<_>>();
         assert_eq!(moves.len(), 9);
         for (idx, move_) in moves.iter().enumerate() {
-            assert_eq!(*move_, Board::to_2d_idx(idx as Index))
+            assert_eq!(*move_, idx as Index)
         }
 
         let board = Board::from_matrix([
@@ -91,6 +90,6 @@ mod board_move_iter_test {
         let move_iter = BoardMoveIter::new(board.0);
         let moves = move_iter.collect::<Vec<_>>();
         assert_eq!(moves.len(), 8);
-        assert!(moves.iter().all(|move_| *move_ != (0, 0)));
+        assert!(moves.iter().all(|move_| *move_ != 0));
     }
 }

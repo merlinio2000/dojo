@@ -42,7 +42,7 @@ fn run_v1() {
             board.set(opp_row as Index, opp_col as Index, my_player.other());
         }
 
-        let (row, col) = board.find_best_move(my_player, move_calc);
+        let (row, col) = Board::to_2d_idx(board.find_best_move(my_player, move_calc));
         board.set(row, col, my_player);
         println!("{row} {col}");
     }

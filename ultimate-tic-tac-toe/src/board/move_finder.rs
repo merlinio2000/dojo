@@ -2,14 +2,13 @@ use std::mem::MaybeUninit;
 
 use crate::{
     bitmagic::{self},
-    board::Board,
     consts,
-    types::{BoardState, Index, Move},
+    types::{BoardState, Index},
 };
 
 #[derive(Debug, Clone, Copy)]
 pub struct BoardMoveFinder {
-    moves_buf: [MaybeUninit<Move>; consts::N_CELLS as usize],
+    moves_buf: [MaybeUninit<Index>; consts::N_CELLS as usize],
 }
 
 impl Default for BoardMoveFinder {
@@ -24,9 +23,16 @@ impl BoardMoveFinder {
     pub fn new() -> Self {
         Self::default()
     }
-    pub fn available_moves(&mut self, board_state: BoardState) -> &[Move] {
-        //
-        unsafe { self.available_moves_inner(board_state) }
+
+    pub fn set_single(&mut self, available_move: Index) -> &[Index] {
+        self.moves_buf[0] = MaybeUninit::new(available_move);
+        // safety: only the first element is made available which was initialized above
+        unsafe { std::mem::transmute::<&[MaybeUninit<Index>], &[Index]>(&self.moves_buf[..1]) }
+    }
+
+    // col-major
+    pub fn available_moves(&mut self, board_state: BoardState) -> &[Index] {
+        unsafe { self.available_moves_inner_1d(board_state) }
     }
 
     /// # Safety
@@ -37,7 +43,7 @@ impl BoardMoveFinder {
     /// credit to https://www.chessprogramming.org/BMI2
     #[target_feature(enable = "bmi1")]
     #[target_feature(enable = "bmi2")]
-    pub fn available_moves_inner(&mut self, board_state: BoardState) -> &[Move] {
+    pub fn available_moves_inner_1d(&mut self, board_state: BoardState) -> &[Index] {
         let mut available_bits_contiguous = bitmagic::get_availble_bits_contiguous(board_state);
         let mut found_moves_idx = 0;
         // almost branchless come @ me :)
@@ -54,14 +60,17 @@ impl BoardMoveFinder {
             // & 0b0_0000_0111
             // = 0b0_0000_0000 -> finished
             let available_cell_index = bitmagic::trailing_zeros(available_bits_contiguous);
-            self.moves_buf[found_moves_idx] =
-                MaybeUninit::new(Board::to_2d_idx(available_cell_index as Index));
+            self.moves_buf[found_moves_idx] = MaybeUninit::new(available_cell_index as Index);
 
             found_moves_idx += 1;
             available_bits_contiguous &= available_bits_contiguous - 1;
         }
         // safety: all items up to `found_moves_idx` have been initialised in the while
-        unsafe { std::mem::transmute(&self.moves_buf[..found_moves_idx]) }
+        unsafe {
+            std::mem::transmute::<&[MaybeUninit<Index>], &[Index]>(
+                &self.moves_buf[..found_moves_idx],
+            )
+        }
     }
 }
 
@@ -83,15 +92,15 @@ mod test {
         ]);
         let moves = move_iter.available_moves(board.0);
         assert_eq!(moves.len(), 2);
-        assert_eq!(moves[0], (0, 0));
-        assert_eq!(moves[1], (0, 1));
+        assert_eq!(moves[0], 0);
+        assert_eq!(moves[1], 3);
 
         let board =
             Board::from_matrix([[Free, Free, Free], [Free, Free, Free], [Free, Free, Free]]);
         let moves = move_iter.available_moves(board.0);
         assert_eq!(moves.len(), 9);
         for (idx, move_) in moves.iter().enumerate() {
-            assert_eq!(*move_, Board::to_2d_idx(idx as Index))
+            assert_eq!(*move_, idx as Index)
         }
 
         let board = Board::from_matrix([
@@ -109,6 +118,6 @@ mod test {
         ]);
         let moves = move_iter.available_moves(board.0);
         assert_eq!(moves.len(), 8);
-        assert!(moves.iter().all(|move_| *move_ != (0, 0)));
+        assert!(moves.iter().all(|move_| *move_ != 0));
     }
 }
