@@ -51,6 +51,7 @@ fn run_v1() {
 fn main() {
     assert!(std::is_x86_feature_detected!("bmi1"));
     assert!(std::is_x86_feature_detected!("bmi2"));
+    assert!(std::is_x86_feature_detected!("popcnt"));
     assert!(std::is_x86_feature_detected!("avx"));
     assert!(std::is_x86_feature_detected!("avx2"));
 }

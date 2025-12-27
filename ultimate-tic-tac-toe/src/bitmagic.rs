@@ -68,6 +68,26 @@ pub(crate) fn get_availble_bits_contiguous(board_state: u32) -> u32 {
     get_availble_bits_contiguous_fallback(board_state)
 }
 
+pub(crate) const fn count_ones(bits: u128) -> u32 {
+    // safety: this may only be run on modern x86 cpus, main asserts feature is available
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        count_ones_x86_popcnt(bits)
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    bits.count_ones()
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "bmi1")]
+#[target_feature(enable = "bmi2")]
+#[target_feature(enable = "sse3")]
+#[target_feature(enable = "sse4.2")]
+#[target_feature(enable = "popcnt")]
+const fn count_ones_x86_popcnt(bits: u128) -> u32 {
+    bits.count_ones()
+}
+
 #[cfg(test)]
 mod test {
     use crate::bitmagic::get_availble_bits_contiguous_fallback;
