@@ -1,4 +1,4 @@
-use crate::consts;
+use crate::{board::move_iter::BoardMoveIterU128, consts, util::BoardMajorBitset};
 
 pub(crate) const fn trailing_zeros(bits: u32) -> u32 {
     // safety: this may only be run on modern x86 cpus, main asserts feature is available
@@ -21,6 +21,30 @@ const unsafe fn trailing_zeros_x86_bmi1(bits: u32) -> u32 {
 
 #[allow(unused)]
 const fn trailing_zeros_fallback(bits: u32) -> u32 {
+    bits.trailing_zeros()
+}
+
+pub(crate) const fn trailing_zeros_u128(bits: u128) -> u32 {
+    // safety: this may only be run on modern x86 cpus, main asserts feature is available
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        trailing_zeros_u128_x86_bmi1(bits)
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    trailing_zeros_u128_fallback(board_state)
+}
+
+/// safety: make sure this is run on x86-64 with bmi1 enabled
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "bmi1")]
+#[inline]
+const unsafe fn trailing_zeros_u128_x86_bmi1(bits: u128) -> u32 {
+    // NOTE: the bmi1 feature ensures this is compiled to tzcnt
+    bits.trailing_zeros()
+}
+
+#[allow(unused)]
+const fn trailing_zeros_u128_fallback(bits: u128) -> u32 {
     bits.trailing_zeros()
 }
 
@@ -86,6 +110,42 @@ pub(crate) const fn count_ones(bits: u128) -> u32 {
 #[target_feature(enable = "popcnt")]
 const fn count_ones_x86_popcnt(bits: u128) -> u32 {
     bits.count_ones()
+}
+pub fn index_of_nth_setbit(x: u128, n: u32) -> u32 {
+    // safety: this may only be run on modern x86 cpus, main asserts feature is available
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        index_of_nth_setbit_x64_bmi(x, n)
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    index_of_nth_setbit_fallback(x, n)
+}
+
+/// # Safety
+/// requires cpu features popcnt,bmi,bmi2
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "popcnt,bmi1,bmi2")]
+pub unsafe fn index_of_nth_setbit_x64_bmi(x: u128, n: u32) -> u32 {
+    let lo: u64 = x as u64;
+    let hi: u64 = (x >> 64) as u64;
+
+    let lo_count = core::arch::x86_64::_popcnt64(lo as i64) as u32;
+
+    let (part, base, n) = if n < lo_count {
+        (lo, 0u32, n)
+    } else {
+        (hi, 64u32, n - lo_count)
+    };
+
+    let sel = core::arch::x86_64::_pdep_u64(1u64 << n, part);
+
+    base + core::arch::x86_64::_tzcnt_u64(sel) as u32
+}
+pub unsafe fn index_of_nth_setbit_fallback(x: u128, n: u32) -> u32 {
+    // safety: right here we actually dont care about the validity of the board
+    BoardMoveIterU128::new(unsafe { BoardMajorBitset::new_unchecked(x) })
+        .nth(n as usize)
+        .expect("at least one bit has to be set to get its index")
 }
 
 #[cfg(test)]
