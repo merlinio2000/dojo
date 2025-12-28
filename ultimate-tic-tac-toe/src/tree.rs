@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     bitmagic, consts,
-    types::{Index, Move, Player},
+    types::Player, util::BoardMajorBitset,
 };
 
 type NodeIdx = u32;
@@ -38,10 +38,11 @@ impl NodeState {
         }
     }
     const fn player1_occupied(&self) -> BoardMajorBitset {
-        BoardMajorBitset(self.bits[0])
+        // safety: no metadata is ever stored in the first bitset
+        unsafe {BoardMajorBitset::new_unchecked(self.bits[0])}
     }
     const fn player2_occupied(&self) -> BoardMajorBitset {
-        BoardMajorBitset(self.bits[1] & BoardMajorBitset::GRID_MASK)
+        BoardMajorBitset::new_truncated(self.bits[1])
     }
     const fn meta(&self) -> u32 {
         (self.bits[1] >> Self::META_OFFSET_PLAYER2) as u32
@@ -49,9 +50,9 @@ impl NodeState {
     const fn forced_move(&self) -> u8 {
         (self.meta() & 0b1111) as u8
     }
-    fn available_in_board_or_fallback(&self) -> u128 {
-        let is_occupied = self.player1_occupied().0 | self.player2_occupied().0;
-        let is_available = !is_occupied & BoardMajorBitset::GRID_MASK;
+    fn available_in_board_or_fallback(&self) -> BoardMajorBitset {
+        let is_occupied = self.player1_occupied() | self.player2_occupied();
+        let is_available = !is_occupied;
 
         let forced_move = self.forced_move();
 
@@ -59,11 +60,11 @@ impl NodeState {
             return is_available;
         }
 
-        let board_mask = BoardMajorBitset::BOARD_FULL_MASK << (forced_move * consts::N_CELLS as u8);
+        let board_mask = BoardMajorBitset::new_full_board(forced_move as u32);
         let is_available_for_board = board_mask & is_available;
 
         // no moves are available for the board, return the whole grid as it is
-        if is_available_for_board == 0 {
+        if is_available_for_board.is_empty() {
             is_available
         } else {
             is_available_for_board
@@ -75,27 +76,6 @@ impl NodeState {
         let mut child_state = *self;
         child_state.bits[player as usize] |= 0b1 << board_col_major_idx;
         child_state
-    }
-}
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-struct BoardMajorBitset(u128);
-
-impl BoardMajorBitset {
-    const BOARD_FULL_MASK: u128 = 0b1_1111_1111;
-    const BITS: u32 = consts::N_CELLS * consts::N_CELLS;
-    const GRID_MASK: u128 = 2u128.pow(Self::BITS) - 1;
-    fn fill_board(&mut self, board_idx: Index) {
-        debug_assert!(board_idx < consts::N_CELLS);
-        let board_full_mask = Self::BOARD_FULL_MASK << (board_idx * consts::N_CELLS);
-        self.0 |= board_full_mask;
-    }
-    fn is_board_full(&self, board_idx: Index) -> bool {
-        debug_assert!(board_idx < consts::N_CELLS);
-        let board_full_mask = Self::BOARD_FULL_MASK << (board_idx * consts::N_CELLS);
-        self.0 & board_full_mask == board_full_mask
-    }
-    fn apply_move(&mut self, move_: u8) {
-        self.0 |= 1 << move_;
     }
 }
 
@@ -129,7 +109,7 @@ struct Tree {
 
 impl Tree {
     const INITIAL_N_NODES: usize = 500_000;
-    // pulled straight out of where the sun dont shine
+    /// pulled straight out of where the sun dont shine
     const GUESSTIMATE_AVG_CHILDREN: usize = 30;
 
     fn get_or_insert_node(&mut self, node_state: NodeState) -> NodeIdx {
@@ -141,7 +121,7 @@ impl Tree {
                 let idx = self.nodes.len() as u32;
 
                 let available_children = node_state.available_in_board_or_fallback();
-                let child_count = bitmagic::count_ones(available_children) as u8;
+                let child_count = bitmagic::count_ones(available_children.get()) as u8;
 
                 let first_edge = self.edges.len() as u32;
                 // TODO PERF check how well this optimizes (should essentially just advance the len) since the vec is zeroed anyways
@@ -191,12 +171,14 @@ impl Tree {
         let parent_visits_ln = (node.visits as UCBScore).ln();
         let edges = &self.edges
             [node.first_edge as usize..(node.first_edge as usize + node.child_count as usize)];
-        let (mut max_ucb, mut max_ucb_edge) = (0.0, 0);
+        let (mut max_ucb, mut max_ucb_node) = (0.0, 0);
+
         for (edge_idx_for_node, edge) in edges.iter().enumerate() {
             match edge.child_node {
                 None => {
                     max_ucb = UCBScore::MAX;
-                    max_ucb_edge = edge_idx_for_node;
+                    let move = node.game_state.available_in_board_or_fallback();
+                    let new_child = self.get_or_insert_node(node_state)
                     break;
                 }
                 Some(child_node) => {
@@ -204,7 +186,7 @@ impl Tree {
                     let child_ucb = upper_confidence_bound(parent_visits_ln, child);
                     if child_ucb > max_ucb {
                         max_ucb = child_ucb;
-                        max_ucb_edge = edge_idx_for_node;
+                        max_ucb_node = edge_idx_for_node;
                     }
                 }
             }
