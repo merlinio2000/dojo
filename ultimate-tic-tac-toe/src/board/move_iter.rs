@@ -1,41 +1,8 @@
-use std::{cell::LazyCell, sync::LazyLock};
-
-use rand::distr::Distribution;
-
 use crate::{
     bitmagic,
     types::{BoardState, Index},
+    util::BoardMajorBitset,
 };
-
-pub trait IBoardMoverIter: Iterator<Item = Index> {}
-
-impl IBoardMoverIter for BoardMoveIter {}
-
-struct RandMoveGenerator {
-    distribution: rand::distr::Uniform<u32>,
-    rng: rand::rngs::ThreadRng,
-}
-
-impl RandMoveGenerator {
-    fn new() -> Self {
-        let distribution = rand::distr::Uniform::try_from(0u32..=0b1_1111_1111)
-            .expect("distribution for random available moves disttribution");
-        let rng = rand::rng();
-        Self { distribution, rng }
-    }
-    fn get_random_available_moves_bitset(&mut self) -> u32 {
-        self.distribution.sample(&mut self.rng)
-    }
-}
-
-thread_local! {
-static RANDOM_MOVE_GENERATOR: RandMoveGenerator =
-    RandMoveGenerator::new()
-}
-
-pub struct RandomBoardMoveIter {
-    is_available_bitset: BoardState,
-}
 
 #[derive(Debug, Clone, Copy)]
 pub struct BoardMoveIter {
@@ -73,6 +40,35 @@ impl BoardMoveIter {
         let available_bits_contiguous = bitmagic::get_availble_bits_contiguous(board_state);
         Self {
             is_available_bitset: available_bits_contiguous,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct BoardMoveIterU128 {
+    is_available_bitset: BoardMajorBitset,
+}
+
+impl Iterator for BoardMoveIterU128 {
+    type Item = Index;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.is_available_bitset.is_empty() {
+            None
+        } else {
+            let available_cell_index =
+                bitmagic::trailing_zeros_u128(self.is_available_bitset.get());
+
+            self.is_available_bitset.unset_least_signifiact_one();
+            Some(available_cell_index as Index)
+        }
+    }
+}
+
+impl BoardMoveIterU128 {
+    pub fn new(is_available_bitset: BoardMajorBitset) -> Self {
+        Self {
+            is_available_bitset,
         }
     }
 }
