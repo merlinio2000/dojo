@@ -4,42 +4,49 @@ use std::{
     num::NonZero,
 };
 
-use crate::{bitmagic, consts, types::Index};
+use crate::{
+    bitmagic, consts,
+    types::{Index, Move, Player},
+};
 
 type NodeIdx = u32;
 
 type MonteCarloScore = i16;
 const NO_MOVE_FORCED: u8 = 9;
 
+/// TODO MERBUG: is it possible to reach the same state but with a different active player?
 /// NOTE: NodeState::default() is not a valid node state and more of a placeholder
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 struct NodeState {
-    player1: BoardMajorBitset,
+    /// # bits[0]
+    /// bitset indicating is_occupied for player 1
+    ///
+    /// # bits[1] (including meta)
+    /// [80:0] = bitset indicating is_occupied for player 2
     /// upper 32 bits are reserved for meta data
     /// the upper 4 bits are used to signify the forced board
     /// MSB(127) = 0 -> no move forced
     /// [99:96] = forced board idx (9 = no forced board)
-    player2: u128,
+    bits: [u128; 2],
 }
 
 impl NodeState {
     const META_OFFSET_PLAYER2: usize = (128 - 32);
-    fn empty() -> Self {
+    const fn empty() -> Self {
         Self {
-            player1: BoardMajorBitset::default(),
-            player2: (NO_MOVE_FORCED as u128) << Self::META_OFFSET_PLAYER2,
+            bits: [0, (NO_MOVE_FORCED as u128) << Self::META_OFFSET_PLAYER2],
         }
     }
-    fn player1_occupied(&self) -> BoardMajorBitset {
-        self.player1
+    const fn player1_occupied(&self) -> BoardMajorBitset {
+        BoardMajorBitset(self.bits[0])
     }
-    fn player2_occupied(&self) -> BoardMajorBitset {
-        BoardMajorBitset(self.player2 & BoardMajorBitset::GRID_MASK)
+    const fn player2_occupied(&self) -> BoardMajorBitset {
+        BoardMajorBitset(self.bits[1] & BoardMajorBitset::GRID_MASK)
     }
-    fn meta(&self) -> u32 {
-        (self.player2 >> Self::META_OFFSET_PLAYER2) as u32
+    const fn meta(&self) -> u32 {
+        (self.bits[1] >> Self::META_OFFSET_PLAYER2) as u32
     }
-    fn forced_move(&self) -> u8 {
+    const fn forced_move(&self) -> u8 {
         (self.meta() & 0b1111) as u8
     }
     fn available_in_board_or_fallback(&self) -> u128 {
@@ -62,10 +69,17 @@ impl NodeState {
             is_available_for_board
         }
     }
-}
 
+    #[must_use]
+    fn apply_move(&self, board_col_major_idx: u8, player: Player) -> NodeState {
+        let mut child_state = *self;
+        child_state.bits[player as usize] |= 0b1 << board_col_major_idx;
+        child_state
+    }
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 struct BoardMajorBitset(u128);
+
 impl BoardMajorBitset {
     const BOARD_FULL_MASK: u128 = 0b1_1111_1111;
     const BITS: u32 = consts::N_CELLS * consts::N_CELLS;
@@ -79,6 +93,9 @@ impl BoardMajorBitset {
         debug_assert!(board_idx < consts::N_CELLS);
         let board_full_mask = Self::BOARD_FULL_MASK << (board_idx * consts::N_CELLS);
         self.0 & board_full_mask == board_full_mask
+    }
+    fn apply_move(&mut self, move_: u8) {
+        self.0 |= 1 << move_;
     }
 }
 
@@ -149,7 +166,7 @@ impl Tree {
         let nodes = Vec::with_capacity(Self::INITIAL_N_NODES);
         let edges = Vec::with_capacity(Self::INITIAL_N_NODES * Self::GUESSTIMATE_AVG_CHILDREN);
 
-        let lookup = HashMap::default();
+        let lookup = HashMap::with_capacity(Self::INITIAL_N_NODES);
 
         let mut this = Self {
             root: 0,
@@ -166,8 +183,32 @@ impl Tree {
         &self.nodes[idx as usize]
     }
 
-    fn expand(&mut self) {
-        let mut node_idx = self.root;
+    fn expand(&mut self, node_idx: NodeIdx) {
+        let node = &mut self.nodes[node_idx as usize];
+
+        node.visits += 1;
+
+        let parent_visits_ln = (node.visits as UCBScore).ln();
+        let edges = &self.edges
+            [node.first_edge as usize..(node.first_edge as usize + node.child_count as usize)];
+        let (mut max_ucb, mut max_ucb_edge) = (0.0, 0);
+        for (edge_idx_for_node, edge) in edges.iter().enumerate() {
+            match edge.child_node {
+                None => {
+                    max_ucb = UCBScore::MAX;
+                    max_ucb_edge = edge_idx_for_node;
+                    break;
+                }
+                Some(child_node) => {
+                    let child = &self.nodes[child_node.get() as usize];
+                    let child_ucb = upper_confidence_bound(parent_visits_ln, child);
+                    if child_ucb > max_ucb {
+                        max_ucb = child_ucb;
+                        max_ucb_edge = edge_idx_for_node;
+                    }
+                }
+            }
+        }
     }
 }
 
