@@ -10,6 +10,8 @@ pub const CELL_BITS: usize = 2;
 pub const COLS: Index = 3;
 pub const ROWS: Index = COLS;
 pub const N_CELLS: Index = COLS * ROWS;
+pub const N_BOARDS: Index = N_CELLS;
+pub const N_CELLS_NESTED: Index = N_CELLS * N_BOARDS;
 
 pub const LOOKUP_1D_TO_2D: [Move; N_CELLS as usize] = {
     let mut lookup = [(0, 0); N_CELLS as usize];

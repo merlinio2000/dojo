@@ -4,10 +4,9 @@ use std::{
     num::NonZero,
 };
 
-use crate::{
-    bitmagic, consts,
-    types::Player, util::BoardMajorBitset,
-};
+use rand::seq::IndexedRandom;
+
+use crate::{bitmagic, consts, types::Player, util::BoardMajorBitset};
 
 type NodeIdx = u32;
 
@@ -39,7 +38,7 @@ impl NodeState {
     }
     const fn player1_occupied(&self) -> BoardMajorBitset {
         // safety: no metadata is ever stored in the first bitset
-        unsafe {BoardMajorBitset::new_unchecked(self.bits[0])}
+        unsafe { BoardMajorBitset::new_unchecked(self.bits[0]) }
     }
     const fn player2_occupied(&self) -> BoardMajorBitset {
         BoardMajorBitset::new_truncated(self.bits[1])
@@ -105,6 +104,7 @@ struct Tree {
     edges: Vec<Edge>,
     // TODO PERF: std lib hash function is probably sub optimal because of hashDoS mitigations
     lookup: HashMap<NodeState, NodeIdx>,
+    edge_selection_buf: [NodeIdx; consts::N_CELLS_NESTED as usize],
 }
 
 impl Tree {
@@ -116,8 +116,6 @@ impl Tree {
         match self.lookup.entry(node_state) {
             Entry::Occupied(occupied_entry) => *occupied_entry.get(),
             Entry::Vacant(vacant_entry) => {
-                debug_assert_eq!(self.edges.len(), self.nodes.len());
-
                 let idx = self.nodes.len() as u32;
 
                 let available_children = node_state.available_in_board_or_fallback();
@@ -153,6 +151,7 @@ impl Tree {
             nodes,
             edges,
             lookup,
+            edge_selection_buf: [0; consts::N_CELLS_NESTED as usize],
         };
 
         this.get_or_insert_node(NodeState::empty());
@@ -167,30 +166,57 @@ impl Tree {
         let node = &mut self.nodes[node_idx as usize];
 
         node.visits += 1;
+        let edge_offset = node.first_edge;
 
-        let parent_visits_ln = (node.visits as UCBScore).ln();
-        let edges = &self.edges
-            [node.first_edge as usize..(node.first_edge as usize + node.child_count as usize)];
-        let (mut max_ucb, mut max_ucb_node) = (0.0, 0);
+        let edges =
+            &self.edges[edge_offset as usize..(edge_offset as usize + node.child_count as usize)];
+        // NOTE PERF: this could be maybe optimized by storing a u128 per node for unvisited
+        // children
+        // all unvisited edges have an infite UCB so they are all the max and we have to choose one
+        // randomly
+        let mut unvisited_edge_counter = 0;
+        for (relative_edge_idx, _) in edges
+            .iter()
+            .enumerate()
+            .filter(|(_, edge)| edge.child_node.is_none())
+        {
+            self.edge_selection_buf[unvisited_edge_counter] = relative_edge_idx as NodeIdx;
+            unvisited_edge_counter += 1;
+        }
+        let child_to_visit = if unvisited_edge_counter != 0 {
+            let rand_idx = rand::random_range(0..unvisited_edge_counter);
+            let rand_unvisited_edge_relative_idx = self.edge_selection_buf[rand_idx];
+            let move_ = bitmagic::index_of_nth_setbit(
+                node.game_state.available_in_board_or_fallback().get(),
+                rand_unvisited_edge_relative_idx,
+            ) as u8;
+            let child_state = node.game_state.apply_move(move_, Player::Player1);
+            let child_node_idx = self.get_or_insert_node(child_state);
+            debug_assert_ne!(child_node_idx, 0);
+            // NOTE: this should never be none, a move can not possibly result in the first/empty
+            // node
+            let edge_absolute_idx = (edge_offset + rand_unvisited_edge_relative_idx) as usize;
+            // NOTE not-resuing local variable edges because it conflicts with the mutable borrow
+            // of inserting a node
+            self.edges[edge_absolute_idx].child_node = NonZero::new(child_node_idx);
+            self.edges[edge_absolute_idx].move_ = move_;
 
-        for (edge_idx_for_node, edge) in edges.iter().enumerate() {
-            match edge.child_node {
-                None => {
-                    max_ucb = UCBScore::MAX;
-                    let move = node.game_state.available_in_board_or_fallback();
-                    let new_child = self.get_or_insert_node(node_state)
-                    break;
-                }
-                Some(child_node) => {
-                    let child = &self.nodes[child_node.get() as usize];
-                    let child_ucb = upper_confidence_bound(parent_visits_ln, child);
-                    if child_ucb > max_ucb {
-                        max_ucb = child_ucb;
-                        max_ucb_node = edge_idx_for_node;
-                    }
+            child_node_idx
+        } else {
+            let parent_visits_ln = (node.visits as UCBScore).ln();
+            let (mut max_ucb, mut max_ucb_node) = (0.0, 0);
+            for edge in edges {
+                // safety: if any child node is unvisited the code path above this for loop returns early
+                let child_node_idx = unsafe { edge.child_node.unwrap_unchecked() };
+                let child = &self.nodes[child_node_idx.get() as usize];
+                let child_ucb = upper_confidence_bound(parent_visits_ln, child);
+                if child_ucb > max_ucb {
+                    max_ucb = child_ucb;
+                    max_ucb_node = child_node_idx.get();
                 }
             }
-        }
+            max_ucb_node
+        };
     }
 }
 
