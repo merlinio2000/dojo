@@ -7,6 +7,7 @@ use crate::{
 pub mod move_finder;
 pub mod move_iter;
 pub mod nested;
+pub mod one_bit;
 
 // 2 bits per cell
 // bit1: is occupied (bool)

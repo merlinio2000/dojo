@@ -45,7 +45,7 @@ impl BoardMoveIter {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct BoardMoveIterU128 {
+pub(crate) struct BoardMoveIterU128 {
     is_available_bitset: BoardMajorBitset,
 }
 

@@ -4,9 +4,13 @@ use std::{
     num::NonZero,
 };
 
-use rand::seq::IndexedRandom;
-
-use crate::{bitmagic, consts, types::Player, util::BoardMajorBitset};
+use crate::{
+    bitmagic,
+    board::one_bit::OneBitBoard,
+    consts::{self, N_CELLS},
+    types::{BoardState, Player},
+    util::BoardMajorBitset,
+};
 
 type NodeIdx = u32;
 
@@ -26,14 +30,16 @@ struct NodeState {
     /// the upper 4 bits are used to signify the forced board
     /// MSB(127) = 0 -> no move forced
     /// [99:96] = forced board idx (9 = no forced board)
+    /// [113:112] = active player as u8, see [`Player`]
     bits: [u128; 2],
 }
 
 impl NodeState {
-    const META_OFFSET_PLAYER2: usize = (128 - 32);
+    const META_OFFSET: usize = (128 - 32);
+    const PLAYER_OFFSET_IN_META: usize = 16;
     const fn empty() -> Self {
         Self {
-            bits: [0, (NO_MOVE_FORCED as u128) << Self::META_OFFSET_PLAYER2],
+            bits: [0, (NO_MOVE_FORCED as u128) << Self::META_OFFSET],
         }
     }
     const fn player1_occupied(&self) -> BoardMajorBitset {
@@ -43,13 +49,22 @@ impl NodeState {
     const fn player2_occupied(&self) -> BoardMajorBitset {
         BoardMajorBitset::new_truncated(self.bits[1])
     }
+
     const fn meta(&self) -> u32 {
-        (self.bits[1] >> Self::META_OFFSET_PLAYER2) as u32
+        (self.bits[1] >> Self::META_OFFSET) as u32
     }
     const fn forced_move(&self) -> u8 {
-        (self.meta() & 0b1111) as u8
+        self.meta() as u8
+    }
+    const fn active_player(&self) -> Player {
+        Player::from_is_player2(self.meta() >> Self::PLAYER_OFFSET_IN_META != 0)
+    }
+
+    const fn get_player_board(&self, player: Player, board_idx: u8) -> OneBitBoard {
+        OneBitBoard::new((self.bits[player as usize] >> (board_idx as u32 * N_CELLS)) as BoardState)
     }
     fn available_in_board_or_fallback(&self) -> BoardMajorBitset {
+        // TODO PERF: this code has an unnecessary '& GRID_MASK', check the asm
         let is_occupied = self.player1_occupied() | self.player2_occupied();
         let is_available = !is_occupied;
 
@@ -71,9 +86,15 @@ impl NodeState {
     }
 
     #[must_use]
-    fn apply_move(&self, board_col_major_idx: u8, player: Player) -> NodeState {
+    const fn apply_move(&self, board_col_major_idx: u8) -> NodeState {
         let mut child_state = *self;
+        let player = self.active_player();
+
+        let new_meta: u32 = ((self.active_player().other() as u32) << Self::PLAYER_OFFSET_IN_META)
+            | (board_col_major_idx % 9) as u32;
+
         child_state.bits[player as usize] |= 0b1 << board_col_major_idx;
+        child_state.bits[player as usize] |= (new_meta as u128) << Self::META_OFFSET;
         child_state
     }
 }
@@ -86,7 +107,7 @@ struct Node {
     score: MonteCarloScore,
     /// first child node at `first_edge + 1`
     first_edge: NodeIdx,
-    child_count: u8, // <= 81
+    child_count: u8, // <= N_CELLS_NESTED
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -103,7 +124,7 @@ struct Tree {
     nodes: Vec<Node>,
     edges: Vec<Edge>,
     // TODO PERF: std lib hash function is probably sub optimal because of hashDoS mitigations
-    lookup: HashMap<NodeState, NodeIdx>,
+    lookup_without_root: HashMap<NodeState, NodeIdx>,
     edge_selection_buf: [NodeIdx; consts::N_CELLS_NESTED as usize],
 }
 
@@ -112,14 +133,71 @@ impl Tree {
     /// pulled straight out of where the sun dont shine
     const GUESSTIMATE_AVG_CHILDREN: usize = 30;
 
-    fn get_or_insert_node(&mut self, node_state: NodeState) -> NodeIdx {
-        match self.lookup.entry(node_state) {
+    fn new() -> Self {
+        let nodes = Vec::with_capacity(Self::INITIAL_N_NODES);
+        let edges = Vec::with_capacity(Self::INITIAL_N_NODES * Self::GUESSTIMATE_AVG_CHILDREN);
+
+        let lookup_without_root = HashMap::with_capacity(Self::INITIAL_N_NODES);
+
+        let mut this = Self {
+            root: 0,
+            nodes,
+            edges,
+            lookup_without_root,
+            edge_selection_buf: [0; consts::N_CELLS_NESTED as usize],
+        };
+
+        this.insert_root_node();
+
+        this
+    }
+
+    fn insert_root_node(&mut self) -> NodeIdx {
+        let idx = self.nodes.len() as u32;
+
+        let node_state = NodeState::empty();
+
+        let available_children = node_state.available_in_board_or_fallback();
+        let child_count = bitmagic::count_ones(available_children.get()) as u8;
+
+        let first_edge = self.edges.len() as u32;
+        // TODO PERF check how well this optimizes (should essentially just advance the len) since the vec is zeroed anyways
+        self.edges
+            .extend(iter::repeat_n(Edge::default(), child_count as usize));
+
+        self.nodes.push(Node {
+            game_state: node_state,
+            visits: 0,
+            score: 0,
+            child_count,
+            first_edge,
+        });
+
+        idx
+        // no need to add this to the lookup, empty state can not be reused as its impossible
+        // to clear occupied cells
+    }
+
+    fn get_or_insert_node(&mut self, previous_state: NodeState, move_: u8) -> NodeIdx {
+        let player_making_move = previous_state.active_player();
+        let new_node_state = previous_state.apply_move(move_);
+        match self.lookup_without_root.entry(new_node_state) {
             Entry::Occupied(occupied_entry) => *occupied_entry.get(),
             Entry::Vacant(vacant_entry) => {
                 let idx = self.nodes.len() as u32;
 
-                let available_children = node_state.available_in_board_or_fallback();
-                let child_count = bitmagic::count_ones(available_children.get()) as u8;
+                let board_idx = move_ % 9;
+                let (score, child_count) = if new_node_state
+                    .get_player_board(player_making_move, board_idx)
+                    .has_won()
+                {
+                    // games where someone won have no children
+                    (1, 0)
+                } else {
+                    let available_children = new_node_state.available_in_board_or_fallback();
+                    let child_count = bitmagic::count_ones(available_children.get()) as u8;
+                    (0, child_count)
+                };
 
                 let first_edge = self.edges.len() as u32;
                 // TODO PERF check how well this optimizes (should essentially just advance the len) since the vec is zeroed anyways
@@ -127,9 +205,9 @@ impl Tree {
                     .extend(iter::repeat_n(Edge::default(), child_count as usize));
 
                 self.nodes.push(Node {
-                    game_state: node_state,
+                    game_state: previous_state,
                     visits: 0,
-                    score: 0,
+                    score,
                     child_count,
                     first_edge,
                 });
@@ -140,36 +218,23 @@ impl Tree {
         }
     }
 
-    fn new() -> Self {
-        let nodes = Vec::with_capacity(Self::INITIAL_N_NODES);
-        let edges = Vec::with_capacity(Self::INITIAL_N_NODES * Self::GUESSTIMATE_AVG_CHILDREN);
-
-        let lookup = HashMap::with_capacity(Self::INITIAL_N_NODES);
-
-        let mut this = Self {
-            root: 0,
-            nodes,
-            edges,
-            lookup,
-            edge_selection_buf: [0; consts::N_CELLS_NESTED as usize],
-        };
-
-        this.get_or_insert_node(NodeState::empty());
-
-        this
-    }
     fn get(&self, idx: NodeIdx) -> &Node {
         &self.nodes[idx as usize]
     }
 
-    fn expand(&mut self, node_idx: NodeIdx) {
-        let node = &mut self.nodes[node_idx as usize];
+    fn expand(&mut self, parent_node_idx: NodeIdx) -> MonteCarloScore {
+        let parent_node = &mut self.nodes[parent_node_idx as usize];
+        parent_node.visits += 1;
 
-        node.visits += 1;
-        let edge_offset = node.first_edge;
+        // terminal leaf node
+        if parent_node.child_count == 0 {
+            return parent_node.score;
+        }
 
-        let edges =
-            &self.edges[edge_offset as usize..(edge_offset as usize + node.child_count as usize)];
+        let edge_offset = parent_node.first_edge;
+
+        let edges = &self.edges
+            [edge_offset as usize..(edge_offset as usize + parent_node.child_count as usize)];
         // NOTE PERF: this could be maybe optimized by storing a u128 per node for unvisited
         // children
         // all unvisited edges have an infite UCB so they are all the max and we have to choose one
@@ -183,18 +248,23 @@ impl Tree {
             self.edge_selection_buf[unvisited_edge_counter] = relative_edge_idx as NodeIdx;
             unvisited_edge_counter += 1;
         }
+
         let child_to_visit = if unvisited_edge_counter != 0 {
             let rand_idx = rand::random_range(0..unvisited_edge_counter);
             let rand_unvisited_edge_relative_idx = self.edge_selection_buf[rand_idx];
             let move_ = bitmagic::index_of_nth_setbit(
-                node.game_state.available_in_board_or_fallback().get(),
+                parent_node
+                    .game_state
+                    .available_in_board_or_fallback()
+                    .get(),
                 rand_unvisited_edge_relative_idx,
             ) as u8;
-            let child_state = node.game_state.apply_move(move_, Player::Player1);
-            let child_node_idx = self.get_or_insert_node(child_state);
-            debug_assert_ne!(child_node_idx, 0);
-            // NOTE: this should never be none, a move can not possibly result in the first/empty
+            let current_state = parent_node.game_state;
+            let child_node_idx = self.get_or_insert_node(current_state, move_);
+
+            // NOTE: this should never be zero, a move can not possibly result in the first/empty
             // node
+            debug_assert_ne!(child_node_idx, 0);
             let edge_absolute_idx = (edge_offset + rand_unvisited_edge_relative_idx) as usize;
             // NOTE not-resuing local variable edges because it conflicts with the mutable borrow
             // of inserting a node
@@ -203,7 +273,7 @@ impl Tree {
 
             child_node_idx
         } else {
-            let parent_visits_ln = (node.visits as UCBScore).ln();
+            let parent_visits_ln = (parent_node.visits as UCBScore).ln();
             let (mut max_ucb, mut max_ucb_node) = (0.0, 0);
             for edge in edges {
                 // safety: if any child node is unvisited the code path above this for loop returns early
@@ -217,6 +287,11 @@ impl Tree {
             }
             max_ucb_node
         };
+
+        let child_score = self.expand(child_to_visit);
+        let parent_node = &mut self.nodes[parent_node_idx as usize];
+        parent_node.score -= child_score;
+        parent_node.score
     }
 }
 
