@@ -14,7 +14,7 @@ use crate::{
 
 type NodeIdx = u32;
 
-type MonteCarloScore = i16;
+type MonteCarloScore = i32;
 const NO_MOVE_FORCED: u8 = 9;
 
 /// TODO MERBUG: is it possible to reach the same state but with a different active player?
@@ -86,16 +86,26 @@ impl NodeState {
     }
 
     #[must_use]
-    const fn apply_move(&self, board_col_major_idx: u8) -> NodeState {
+    /// # Returns
+    /// - new node state with move applied (and board bits won if board was won)
+    /// - true if the active player won using this move
+    fn apply_move(&self, board_col_major_idx: u8) -> (NodeState, bool) {
         let mut child_state = *self;
         let player = self.active_player();
 
-        let new_meta: u32 = ((self.active_player().other() as u32) << Self::PLAYER_OFFSET_IN_META)
+        let board_idx = board_col_major_idx / 9;
+
+        let new_meta: u32 = ((player.other() as u32) << Self::PLAYER_OFFSET_IN_META)
             | (board_col_major_idx % 9) as u32;
 
         child_state.bits[player as usize] |= 0b1 << board_col_major_idx;
         child_state.bits[player as usize] |= (new_meta as u128) << Self::META_OFFSET;
-        child_state
+
+        let has_won = child_state.get_player_board(player, board_idx).has_won();
+        if has_won {
+            child_state.bits[player as usize] = 0b1_1111_1111 << board_idx;
+        }
+        (child_state, has_won)
     }
 }
 
@@ -179,18 +189,14 @@ impl Tree {
     }
 
     fn get_or_insert_node(&mut self, previous_state: NodeState, move_: u8) -> NodeIdx {
-        let player_making_move = previous_state.active_player();
-        let new_node_state = previous_state.apply_move(move_);
+        let (new_node_state, has_won) = previous_state.apply_move(move_);
+
         match self.lookup_without_root.entry(new_node_state) {
             Entry::Occupied(occupied_entry) => *occupied_entry.get(),
             Entry::Vacant(vacant_entry) => {
                 let idx = self.nodes.len() as u32;
 
-                let board_idx = move_ % 9;
-                let (score, child_count) = if new_node_state
-                    .get_player_board(player_making_move, board_idx)
-                    .has_won()
-                {
+                let (score, child_count) = if has_won {
                     // games where someone won have no children
                     (1, 0)
                 } else {
