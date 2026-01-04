@@ -23,41 +23,53 @@ const NO_MOVE_FORCED: u8 = 9;
 struct NodeState {
     /// # bits[0]
     /// bitset indicating is_occupied for player 1
+    /// upper 32 bits are reserved for meta data
+    /// [127:119] = "super board" / board containing is_won for subboards for player 1
     ///
     /// # bits[1] (including meta)
     /// [80:0] = bitset indicating is_occupied for player 2
     /// upper 32 bits are reserved for meta data
-    /// the upper 4 bits are used to signify the forced board
     /// MSB(127) = 0 -> no move forced
     /// [99:96] = forced board idx (9 = no forced board)
-    /// [113:112] = active player as u8, see [`Player`]
+    /// [112:112] = active player as u8, see [`Player`]
+    /// [127:119] = "super board" / board containing is_won for subboards for player 2
     bits: [u128; 2],
 }
 
 impl NodeState {
-    const META_OFFSET: usize = (128 - 32);
-    const PLAYER_OFFSET_IN_META: usize = 16;
+    const META_OFFSET: u8 = (128 - 32);
+    const PLAYER_OFFSET_IN_META: u8 = 16;
+    const SUPER_BOARD_OFFSET_IN_META: u8 = 23;
     const fn empty() -> Self {
         Self {
             bits: [0, (NO_MOVE_FORCED as u128) << Self::META_OFFSET],
         }
     }
     const fn player1_occupied(&self) -> BoardMajorBitset {
-        // safety: no metadata is ever stored in the first bitset
-        unsafe { BoardMajorBitset::new_unchecked(self.bits[0]) }
+        BoardMajorBitset::new_truncated(self.bits[0])
     }
     const fn player2_occupied(&self) -> BoardMajorBitset {
         BoardMajorBitset::new_truncated(self.bits[1])
     }
 
-    const fn meta(&self) -> u32 {
-        (self.bits[1] >> Self::META_OFFSET) as u32
+    const fn meta_player(&self, player: Player) -> u32 {
+        (self.bits[player as usize] >> Self::META_OFFSET) as u32
+    }
+    const fn meta_player1(&self) -> u32 {
+        self.meta_player(Player::Player1)
+    }
+    const fn meta_player2(&self) -> u32 {
+        self.meta_player(Player::Player2)
     }
     const fn forced_move(&self) -> u8 {
-        self.meta() as u8
+        self.meta_player2() as u8
     }
     const fn active_player(&self) -> Player {
-        Player::from_is_player2(self.meta() >> Self::PLAYER_OFFSET_IN_META != 0)
+        Player::from_is_player2((self.meta_player2() >> Self::PLAYER_OFFSET_IN_META) & 0b1 != 0)
+    }
+
+    const fn super_board_for_player(&self, player: Player) -> BoardState {
+        self.meta_player(player) >> Self::SUPER_BOARD_OFFSET_IN_META
     }
 
     const fn get_player_board(&self, player: Player, board_idx: u8) -> OneBitBoard {
@@ -85,7 +97,12 @@ impl NodeState {
         }
     }
 
+    fn has_won(&self, player: Player) -> bool {
+        OneBitBoard::new(self.super_board_for_player(player)).has_won()
+    }
+
     #[must_use]
+    /// Applys a move and correctly changes the metadata, active player and won boards
     /// # Returns
     /// - new node state with move applied (and board bits won if board was won)
     /// - true if the active player won using this move
@@ -93,19 +110,62 @@ impl NodeState {
         let mut child_state = *self;
         let player = self.active_player();
 
-        let board_idx = board_col_major_idx / 9;
-
-        let new_meta: u32 = ((player.other() as u32) << Self::PLAYER_OFFSET_IN_META)
-            | (board_col_major_idx % 9) as u32;
+        let board_idx = board_col_major_idx / consts::N_CELLS as u8;
 
         child_state.bits[player as usize] |= 0b1 << board_col_major_idx;
-        child_state.bits[player as usize] |= (new_meta as u128) << Self::META_OFFSET;
 
-        let has_won = child_state.get_player_board(player, board_idx).has_won();
-        if has_won {
-            child_state.bits[player as usize] = 0b1_1111_1111 << board_idx;
+        let has_won_subboard = child_state.get_player_board(player, board_idx).has_won();
+        let mut new_meta: u32 = ((player.other() as u32) << Self::PLAYER_OFFSET_IN_META)
+            | (board_col_major_idx % consts::N_CELLS as u8) as u32;
+
+        if has_won_subboard {
+            // block all cells in that board (simpler logic for available moves)
+            child_state.bits[player as usize] |= 0b1_1111_1111 << board_idx;
+            // track wins in super board
+            new_meta |= 1 << (Self::SUPER_BOARD_OFFSET_IN_META + board_idx);
         }
-        (child_state, has_won)
+
+        child_state.bits[player as usize] |= (new_meta as u128) << Self::META_OFFSET;
+        let won_game = if has_won_subboard {
+            child_state.has_won(player)
+        } else {
+            false
+        };
+
+        (child_state, won_game)
+    }
+
+    /// # Returns
+    /// - -1 if the not initially active player wins
+    /// - 0 for a draw
+    /// - 1 if the initally active player wins
+    fn simulate_random(self) -> MonteCarloScore {
+        let (mut game, mut has_won) = (self, false);
+        let inital_player = game.active_player();
+        let mut available_moves = game.available_in_board_or_fallback();
+        debug_assert!(
+            !available_moves.is_empty(),
+            "can not simulate from a terminal state"
+        );
+
+        while !has_won && !available_moves.is_empty() {
+            available_moves = game.available_in_board_or_fallback();
+            let n_moves = bitmagic::count_ones(available_moves.get());
+            let rand_nth_setbit = rand::random_range(0..n_moves);
+            let rand_move =
+                bitmagic::index_of_nth_setbit(available_moves.get(), rand_nth_setbit) as u8;
+            (game, has_won) = game.apply_move(rand_move);
+        }
+
+        if has_won {
+            let winner = game.active_player().other();
+            // branchless score
+            // lost: -1 + 0*2 = -1
+            // won: -1 + 1*2 = 1
+            -1 + ((winner == inital_player) as i32 * 2)
+        } else {
+            0
+        }
     }
 }
 
@@ -269,7 +329,7 @@ impl Tree {
             let child_node_idx = self.get_or_insert_node(current_state, move_);
 
             // NOTE: this should never be zero, a move can not possibly result in the first/empty
-            // node
+            // node as this would mean "un-setting" cells
             debug_assert_ne!(child_node_idx, 0);
             let edge_absolute_idx = (edge_offset + rand_unvisited_edge_relative_idx) as usize;
             // NOTE not-resuing local variable edges because it conflicts with the mutable borrow
