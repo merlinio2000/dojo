@@ -115,17 +115,19 @@ impl NodeState {
         child_state.bits[player as usize] |= 0b1 << board_col_major_idx;
 
         let has_won_subboard = child_state.get_player_board(player, board_idx).has_won();
-        let mut new_meta: u32 = ((player.other() as u32) << Self::PLAYER_OFFSET_IN_META)
+        let new_general_meta: u32 = ((player.other() as u32) << Self::PLAYER_OFFSET_IN_META)
             | (board_col_major_idx % consts::N_CELLS as u8) as u32;
 
         if has_won_subboard {
             // block all cells in that board (simpler logic for available moves)
             child_state.bits[player as usize] |= 0b1_1111_1111 << board_idx;
-            // track wins in super board
-            new_meta |= 1 << (Self::SUPER_BOARD_OFFSET_IN_META + board_idx);
+            // track wins in super board (specific to each player, not in general meta)
+            child_state.bits[player as usize] |=
+                1 << (Self::META_OFFSET + Self::SUPER_BOARD_OFFSET_IN_META + board_idx);
         }
 
-        child_state.bits[player as usize] |= (new_meta as u128) << Self::META_OFFSET;
+        child_state.bits[Player::Player2 as usize] |=
+            (new_general_meta as u128) << Self::META_OFFSET;
         let won_game = if has_won_subboard {
             child_state.has_won(player)
         } else {
