@@ -191,7 +191,7 @@ struct Edge {
 }
 
 struct Tree {
-    root: usize,
+    root: NodeIdx,
     // TODO PERF: maybe try to get this automatically promoted to a huge page by alignment
     nodes: Vec<Node>,
     edges: Vec<Edge>,
@@ -286,8 +286,21 @@ impl Tree {
         }
     }
 
-    fn get(&self, idx: NodeIdx) -> &Node {
-        &self.nodes[idx as usize]
+    /// should only be called if root is not at a terminal state
+    pub fn search(&mut self) -> u8 {
+        for _i in 0..100_000 {
+            let _score_from_leaf = self.expand(self.root);
+        }
+        let root_node = &self.nodes[self.root as usize];
+        self.edges[root_node.first_edge as usize
+            ..root_node.first_edge as usize + root_node.child_count as usize]
+            .iter()
+            .max_by_key(|edge| {
+                edge.child_node
+                    .map_or(0, |child_idx| self.nodes[child_idx.get() as usize].visits)
+            })
+            .expect("can not search on terminal node")
+            .move_
     }
 
     fn expand(&mut self, parent_node_idx: NodeIdx) -> MonteCarloScore {
@@ -317,7 +330,7 @@ impl Tree {
             unvisited_edge_counter += 1;
         }
 
-        let child_to_visit = if unvisited_edge_counter != 0 {
+        if unvisited_edge_counter != 0 {
             let rand_idx = rand::random_range(0..unvisited_edge_counter);
             let rand_unvisited_edge_relative_idx = self.edge_selection_buf[rand_idx];
             let move_ = bitmagic::index_of_nth_setbit(
@@ -339,10 +352,15 @@ impl Tree {
             self.edges[edge_absolute_idx].child_node = NonZero::new(child_node_idx);
             self.edges[edge_absolute_idx].move_ = move_;
 
-            child_node_idx
+            let new_child_node = &mut self.nodes[child_node_idx as usize];
+            new_child_node.score = new_child_node.game_state.simulate_random();
+            new_child_node.visits += 1;
+
+            new_child_node.score
         } else {
             let parent_visits_ln = (parent_node.visits as UCBScore).ln();
-            let (mut max_ucb, mut max_ucb_node) = (0.0, 0);
+            let (mut max_ucb, mut max_ucb_node) = (f32::MIN, 0);
+
             for edge in edges {
                 // safety: if any child node is unvisited the code path above this for loop returns early
                 let child_node_idx = unsafe { edge.child_node.unwrap_unchecked() };
@@ -353,13 +371,13 @@ impl Tree {
                     max_ucb_node = child_node_idx.get();
                 }
             }
-            max_ucb_node
-        };
 
-        let child_score = self.expand(child_to_visit);
-        let parent_node = &mut self.nodes[parent_node_idx as usize];
-        parent_node.score -= child_score;
-        parent_node.score
+            // negate because of negamax (a win for a child is a loss for us)
+            let score_delta = -self.expand(max_ucb_node);
+            let parent_node = &mut self.nodes[parent_node_idx as usize];
+            parent_node.score += score_delta;
+            score_delta
+        }
     }
 }
 
