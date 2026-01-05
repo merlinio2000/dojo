@@ -71,8 +71,9 @@ impl BoardMajorBitset {
     pub const fn new_truncated(board_col_major_indices: u128) -> Self {
         Self(board_col_major_indices & Self::GRID_MASK)
     }
-    pub const fn new_full_board(board_idx: Index) -> Self {
-        Self(BoardMajorBitset::BOARD_FULL_MASK << (board_idx * consts::N_CELLS))
+    pub const fn new_full_board(board_idx: u8) -> Self {
+        debug_assert!(board_idx < consts::N_CELLS as u8, "board idx out of range");
+        Self(BoardMajorBitset::BOARD_FULL_MASK << (board_idx * consts::N_CELLS as u8))
     }
 
     pub const fn get(&self) -> u128 {

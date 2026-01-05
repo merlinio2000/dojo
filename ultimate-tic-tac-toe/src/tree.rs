@@ -61,7 +61,7 @@ impl NodeState {
     const fn meta_player2(&self) -> u32 {
         self.meta_player(Player::Player2)
     }
-    const fn forced_move(&self) -> u8 {
+    const fn forced_board(&self) -> u8 {
         self.meta_player2() as u8
     }
     const fn active_player(&self) -> Player {
@@ -80,13 +80,18 @@ impl NodeState {
         let is_occupied = self.player1_occupied() | self.player2_occupied();
         let is_available = !is_occupied;
 
-        let forced_move = self.forced_move();
+        let forced_board = self.forced_board();
 
-        if forced_move == NO_MOVE_FORCED {
+        if forced_board == NO_MOVE_FORCED {
             return is_available;
         }
 
-        let board_mask = BoardMajorBitset::new_full_board(forced_move as u32);
+        // TODO REMOVE
+        if forced_board >= 9 {
+            dbg!(forced_board);
+            eprintln!("MERBUG meta player2 {:#032b}", self.meta_player2());
+        }
+        let board_mask = BoardMajorBitset::new_full_board(forced_board);
         let is_available_for_board = board_mask & is_available;
 
         // no moves are available for the board, return the whole grid as it is
@@ -205,7 +210,7 @@ impl Tree {
     /// pulled straight out of where the sun dont shine
     const GUESSTIMATE_AVG_CHILDREN: usize = 30;
 
-    fn new() -> Self {
+    pub fn new() -> Self {
         let nodes = Vec::with_capacity(Self::INITIAL_N_NODES);
         let edges = Vec::with_capacity(Self::INITIAL_N_NODES * Self::GUESSTIMATE_AVG_CHILDREN);
 
@@ -392,4 +397,16 @@ fn upper_confidence_bound(parent_visits_ln: UCBScore, child: &Node) -> UCBScore 
     let exploration = EXPLORATION_C * UCBScore::sqrt(parent_visits_ln / child.visits as UCBScore);
 
     exploitation + exploration
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{consts, tree::Tree};
+
+    #[test]
+    fn test_search_works_on_root() {
+        let mut tree = Tree::new();
+        let chosen_move = tree.search();
+        assert!((0..consts::N_CELLS_NESTED as u8).contains(&chosen_move));
+    }
 }
