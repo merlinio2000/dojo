@@ -32,7 +32,12 @@ impl BoardMoveFinder {
 
     // col-major
     pub fn available_moves(&mut self, board_state: BoardState) -> &[Index] {
-        unsafe { self.available_moves_inner_1d(board_state) }
+        #[cfg(target_arch = "x86_64")]
+        unsafe {
+            self.available_moves_inner_1d_x86_bmi2(board_state)
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        self.available_moves_inner_1d(board_state)
     }
 
     /// # Safety
@@ -41,8 +46,20 @@ impl BoardMoveFinder {
     /// - bmi2
     ///
     /// credit to https://www.chessprogramming.org/BMI2
+    /// NOTE: features are enabled here to allow inlining of bitmagic functions actually using them
+    #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "bmi1")]
     #[target_feature(enable = "bmi2")]
+    pub unsafe fn available_moves_inner_1d_x86_bmi2(
+        &mut self,
+        board_state: BoardState,
+    ) -> &[Index] {
+        self.available_moves_inner_1d(board_state)
+    }
+
+    // TODO: verify this is actually inlined, rustc behaves differntly when target_feature is in
+    // the mix
+    #[inline(always)]
     pub fn available_moves_inner_1d(&mut self, board_state: BoardState) -> &[Index] {
         let mut available_bits_contiguous = bitmagic::get_availble_bits_contiguous(board_state);
         let mut found_moves_idx = 0;

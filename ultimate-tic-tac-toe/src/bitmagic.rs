@@ -7,7 +7,7 @@ pub(crate) const fn trailing_zeros(bits: u32) -> u32 {
         trailing_zeros_x86_bmi1(bits)
     }
     #[cfg(not(target_arch = "x86_64"))]
-    trailing_zeros_fallback(board_state)
+    trailing_zeros_fallback(bits)
 }
 
 /// safety: make sure this is run on x86-64 with bmi1 enabled
@@ -31,13 +31,12 @@ pub(crate) const fn trailing_zeros_u128(bits: u128) -> u32 {
         trailing_zeros_u128_x86_bmi1(bits)
     }
     #[cfg(not(target_arch = "x86_64"))]
-    trailing_zeros_u128_fallback(board_state)
+    trailing_zeros_u128_fallback(bits)
 }
 
 /// safety: make sure this is run on x86-64 with bmi1 enabled
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "bmi1")]
-#[inline]
 const unsafe fn trailing_zeros_u128_x86_bmi1(bits: u128) -> u32 {
     // NOTE: the bmi1 feature ensures this is compiled to tzcnt
     bits.trailing_zeros()
@@ -141,11 +140,11 @@ pub unsafe fn index_of_nth_setbit_x64_bmi(x: u128, n: u32) -> u32 {
 
     base + core::arch::x86_64::_tzcnt_u64(sel) as u32
 }
-pub unsafe fn index_of_nth_setbit_fallback(x: u128, n: u32) -> u32 {
+pub fn index_of_nth_setbit_fallback(x: u128, n: u32) -> u32 {
     // safety: right here we actually dont care about the validity of the board
     BoardMoveIterU128::new(unsafe { BoardMajorBitset::new_unchecked(x) })
         .nth(n as usize)
-        .expect("at least one bit has to be set to get its index")
+        .expect("not enough bits set to get the n-th index")
 }
 
 #[cfg(test)]
