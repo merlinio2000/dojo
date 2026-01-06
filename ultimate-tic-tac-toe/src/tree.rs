@@ -40,6 +40,7 @@ impl NodeState {
     const META_OFFSET: u8 = (128 - 32);
     const PLAYER_OFFSET_IN_META: u8 = 16;
     const SUPER_BOARD_OFFSET_IN_META: u8 = 23;
+    const META_MASK: u32 = u32::MAX;
     const fn empty() -> Self {
         Self {
             bits: [0, (NO_MOVE_FORCED as u128) << Self::META_OFFSET],
@@ -123,6 +124,8 @@ impl NodeState {
         let new_general_meta: u32 = ((player.other() as u32) << Self::PLAYER_OFFSET_IN_META)
             | (board_col_major_idx % consts::N_CELLS as u8) as u32;
 
+        eprintln!("MERBUG meta general meta {:#032b}", self.meta_player2());
+
         if has_won_subboard {
             // block all cells in that board (simpler logic for available moves)
             child_state.bits[player as usize] |= 0b1_1111_1111 << board_idx;
@@ -131,6 +134,9 @@ impl NodeState {
                 1 << (Self::META_OFFSET + Self::SUPER_BOARD_OFFSET_IN_META + board_idx);
         }
 
+        // clear meta bits before setting
+        child_state.bits[Player::Player2 as usize] &=
+            !((Self::META_MASK as u128) << Self::META_OFFSET);
         child_state.bits[Player::Player2 as usize] |=
             (new_general_meta as u128) << Self::META_OFFSET;
         let won_game = if has_won_subboard {
