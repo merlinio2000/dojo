@@ -161,13 +161,14 @@ impl NodeState {
             "can not simulate from a terminal state"
         );
 
-        while !has_won && !available_moves.is_empty() {
-            available_moves = game.available_in_board_or_fallback();
+        while !(has_won || available_moves.is_empty()) {
             let n_moves = bitmagic::count_ones(available_moves.get());
             let rand_nth_setbit = rand::random_range(0..n_moves);
             let rand_move =
                 bitmagic::index_of_nth_setbit(available_moves.get(), rand_nth_setbit) as u8;
             (game, has_won) = game.apply_move(rand_move);
+
+            available_moves = game.available_in_board_or_fallback();
         }
 
         if has_won {
