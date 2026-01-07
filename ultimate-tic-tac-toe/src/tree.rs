@@ -56,9 +56,7 @@ impl NodeState {
     const fn meta_player(&self, player: Player) -> u32 {
         (self.bits[player as usize] >> Self::META_OFFSET) as u32
     }
-    const fn meta_player1(&self) -> u32 {
-        self.meta_player(Player::Player1)
-    }
+    /// TODO better name
     const fn meta_player2(&self) -> u32 {
         self.meta_player(Player::Player2)
     }
@@ -87,11 +85,6 @@ impl NodeState {
             return is_available;
         }
 
-        // TODO REMOVE
-        if forced_board >= 9 {
-            dbg!(forced_board);
-            eprintln!("MERBUG meta player2 {:#032b}", self.meta_player2());
-        }
         let board_mask = BoardMajorBitset::new_full_board(forced_board);
         let is_available_for_board = board_mask & is_available;
 
@@ -123,8 +116,6 @@ impl NodeState {
         let has_won_subboard = child_state.get_player_board(player, board_idx).has_won();
         let new_general_meta: u32 = ((player.other() as u32) << Self::PLAYER_OFFSET_IN_META)
             | (board_col_major_idx % consts::N_CELLS as u8) as u32;
-
-        eprintln!("MERBUG meta general meta {:#032b}", self.meta_player2());
 
         if has_won_subboard {
             // block all cells in that board (simpler logic for available moves)
@@ -202,7 +193,7 @@ struct Edge {
     move_: u8,
 }
 
-struct Tree {
+pub struct Tree {
     root: NodeIdx,
     // TODO PERF: maybe try to get this automatically promoted to a huge page by alignment
     nodes: Vec<Node>,
@@ -210,6 +201,12 @@ struct Tree {
     // TODO PERF: std lib hash function is probably sub optimal because of hashDoS mitigations
     lookup_without_root: HashMap<NodeState, NodeIdx>,
     edge_selection_buf: [NodeIdx; consts::N_CELLS_NESTED as usize],
+}
+
+impl Default for Tree {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Tree {
@@ -285,7 +282,7 @@ impl Tree {
                     .extend(iter::repeat_n(Edge::default(), child_count as usize));
 
                 self.nodes.push(Node {
-                    game_state: previous_state,
+                    game_state: new_node_state,
                     visits: 0,
                     score,
                     child_count,
@@ -300,7 +297,7 @@ impl Tree {
 
     /// should only be called if root is not at a terminal state
     pub fn search(&mut self) -> u8 {
-        for _i in 0..100_000 {
+        for _i in 0..300_000 {
             let _score_from_leaf = self.expand(self.root);
         }
         let root_node = &self.nodes[self.root as usize];
