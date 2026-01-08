@@ -408,9 +408,40 @@ mod test {
     use crate::{consts, tree::Tree};
 
     #[test]
-    fn test_search_works_on_root() {
+    fn search_works_on_root() {
         let mut tree = Tree::new();
         let chosen_move = tree.search();
         assert!((0..consts::N_CELLS_NESTED as u8).contains(&chosen_move));
+    }
+
+    #[test]
+    fn expand_adds_node() {
+        let mut tree = Tree::new();
+        assert_eq!(tree.nodes.len(), 1);
+        tree.expand(0);
+        assert_eq!(tree.nodes.len(), 2);
+        tree.expand(0);
+        assert_eq!(tree.nodes.len(), 3);
+    }
+
+    #[test]
+    fn expanded_nodes_are_plausible() {
+        let mut tree = Tree::new();
+        tree.expand(0);
+
+        let root = &tree.nodes[0];
+        assert_eq!(root.visits, 1);
+
+        let root_children = &tree.edges
+            [(root.first_edge as usize)..(root.first_edge as usize + root.child_count as usize)];
+        let defined_root_children_nodes: Vec<_> = root_children
+            .iter()
+            .filter_map(|edge| edge.child_node)
+            .collect();
+        assert_eq!(defined_root_children_nodes.len(), 1);
+        assert_eq!(
+            tree.nodes[defined_root_children_nodes[0].get() as usize].visits,
+            1
+        );
     }
 }
