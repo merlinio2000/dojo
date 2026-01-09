@@ -1,6 +1,10 @@
 use std::num::NonZeroU8;
 
-use crate::{board::move_iter::BoardMoveIterU128, consts, types::Index};
+use crate::{
+    board::{move_iter::BoardMoveIterU128, one_bit::OneBitBoard},
+    consts,
+    types::{BoardState, Index},
+};
 
 pub(crate) const fn const_concat<const A: usize, const B: usize, const C: usize>(
     a: [u32; A],
@@ -84,18 +88,23 @@ impl BoardMajorBitset {
         self.0 == 0
     }
 
-    const fn fill_board(&mut self, board_idx: Index) {
-        debug_assert!(board_idx < consts::N_CELLS);
-        let board_full_mask = Self::BOARD_FULL_MASK << (board_idx * consts::N_CELLS);
+    pub const fn fill_board(&mut self, board_idx: u8) {
+        debug_assert!(board_idx < consts::N_CELLS as u8);
+        let board_full_mask = Self::BOARD_FULL_MASK << (board_idx * consts::N_CELLS as u8);
         self.0 |= board_full_mask;
     }
-    const fn is_board_full(&self, board_idx: Index) -> bool {
-        debug_assert!(board_idx < consts::N_CELLS);
-        let board_full_mask = Self::BOARD_FULL_MASK << (board_idx * consts::N_CELLS);
+    pub const fn is_board_full(&self, board_idx: u8) -> bool {
+        debug_assert!(board_idx < consts::N_CELLS as u8);
+        let board_full_mask = Self::BOARD_FULL_MASK << (board_idx * consts::N_CELLS as u8);
         self.0 & board_full_mask == board_full_mask
     }
-    const fn apply_move(&mut self, move_: u8) {
+    pub const fn apply_move(&mut self, move_: u8) {
         self.0 |= 1 << move_;
+    }
+
+    pub const fn get_sub_board(&self, board_idx: u8) -> OneBitBoard {
+        debug_assert!(board_idx < consts::N_CELLS as u8);
+        OneBitBoard::new((self.0 >> (board_idx as u32 * consts::N_CELLS)) as BoardState)
     }
 
     pub const fn unset_least_signifiact_one(&mut self) {

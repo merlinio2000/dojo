@@ -1,0 +1,136 @@
+use crate::{
+    bitmagic,
+    board::one_bit::OneBitBoard,
+    consts, rng,
+    tree::{MonteCarloScore, NO_MOVE_FORCED},
+    types::Player,
+    util::BoardMajorBitset,
+};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct SimulationState {
+    player_boards: [BoardMajorBitset; 2],
+    /// contains information on who won which sub-board
+    super_boards: [OneBitBoard; 2],
+    active_player: Player,
+    forced_board: u8,
+}
+
+impl SimulationState {
+    pub(super) fn new(
+        player_boards: [BoardMajorBitset; 2],
+        super_boards: [OneBitBoard; 2],
+        active_player: Player,
+        forced_board: u8,
+    ) -> Self {
+        Self {
+            player_boards,
+            super_boards,
+            active_player,
+            forced_board,
+        }
+    }
+
+    fn player1_occupied(&self) -> BoardMajorBitset {
+        self.player_boards[Player::Player1 as usize]
+    }
+    fn player2_occupied(&self) -> BoardMajorBitset {
+        self.player_boards[Player::Player2 as usize]
+    }
+
+    fn has_won(&self, player: Player) -> bool {
+        self.super_boards[player as usize].has_won()
+    }
+
+    #[must_use]
+    /// Applys a move and correctly changes the metadata, active player and won boards
+    /// # Returns
+    /// - new node state with move applied (and board bits won if board was won)
+    /// - true if the active player won using this move
+    pub(super) fn apply_move(&self, board_col_major_idx: u8) -> (Self, bool) {
+        let mut child_state = *self;
+        let player = self.active_player;
+
+        let board_idx = board_col_major_idx / consts::N_CELLS as u8;
+
+        child_state.player_boards[player as usize].apply_move(board_col_major_idx);
+
+        let has_won_subboard = child_state.player_boards[player as usize]
+            .get_sub_board(board_idx)
+            .has_won();
+
+        child_state.active_player = player.other();
+        child_state.forced_board = board_col_major_idx % consts::N_CELLS as u8;
+
+        if has_won_subboard {
+            // block all cells in that board (simpler logic for available moves)
+            child_state.player_boards[player as usize].fill_board(board_idx);
+            // track wins in super board
+            child_state.super_boards[player as usize].set_cell(board_idx);
+        }
+
+        let won_game = if has_won_subboard {
+            child_state.has_won(player)
+        } else {
+            false
+        };
+
+        (child_state, won_game)
+    }
+
+    pub(super) fn available_in_board_or_fallback(&self) -> BoardMajorBitset {
+        // TODO PERF: this code has an unnecessary '& GRID_MASK', check the asm
+        let is_occupied = self.player1_occupied() | self.player2_occupied();
+        let is_available = !is_occupied;
+
+        let forced_board = self.forced_board;
+
+        if forced_board == NO_MOVE_FORCED {
+            return is_available;
+        }
+
+        let board_mask = BoardMajorBitset::new_full_board(forced_board);
+        let is_available_for_board = board_mask & is_available;
+
+        // no moves are available for the board, return the whole grid as it is
+        if is_available_for_board.is_empty() {
+            is_available
+        } else {
+            is_available_for_board
+        }
+    }
+
+    /// # Returns
+    /// - -1 if the not initially active player wins
+    /// - 0 for a draw
+    /// - 1 if the initally active player wins
+    pub(super) fn simulate_random(self) -> MonteCarloScore {
+        let (mut game, mut has_won) = (self, false);
+        let inital_player = game.active_player;
+        let mut available_moves = game.available_in_board_or_fallback();
+        debug_assert!(
+            !available_moves.is_empty(),
+            "can not simulate from a terminal state"
+        );
+
+        while !(has_won || available_moves.is_empty()) {
+            let n_moves = bitmagic::count_ones(available_moves.get()) as u8;
+            let rand_nth_setbit = rng::rand_in_move_range_exclusive(n_moves);
+            let rand_move =
+                bitmagic::index_of_nth_setbit(available_moves.get(), rand_nth_setbit) as u8;
+            (game, has_won) = game.apply_move(rand_move);
+
+            available_moves = game.available_in_board_or_fallback();
+        }
+
+        if has_won {
+            let winner = game.active_player.other();
+            // branchless score
+            // lost: -1 + 0*2 = -1
+            // won: -1 + 1*2 = 1
+            -1 + ((winner == inital_player) as i32 * 2)
+        } else {
+            0
+        }
+    }
+}
