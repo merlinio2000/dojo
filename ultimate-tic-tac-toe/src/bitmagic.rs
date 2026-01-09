@@ -110,7 +110,7 @@ pub(crate) const fn count_ones(bits: u128) -> u32 {
 const fn count_ones_x86_popcnt(bits: u128) -> u32 {
     bits.count_ones()
 }
-pub fn index_of_nth_setbit(x: u128, n: u32) -> u32 {
+pub fn index_of_nth_setbit(x: u128, n: u8) -> u32 {
     // safety: this may only be run on modern x86 cpus, main asserts feature is available
     #[cfg(target_arch = "x86_64")]
     unsafe {
@@ -124,11 +124,11 @@ pub fn index_of_nth_setbit(x: u128, n: u32) -> u32 {
 /// requires cpu features popcnt,bmi,bmi2
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "popcnt,bmi1,bmi2")]
-pub unsafe fn index_of_nth_setbit_x64_bmi(x: u128, n: u32) -> u32 {
+pub unsafe fn index_of_nth_setbit_x64_bmi(x: u128, n: u8) -> u32 {
     let lo: u64 = x as u64;
     let hi: u64 = (x >> 64) as u64;
 
-    let lo_count = core::arch::x86_64::_popcnt64(lo as i64) as u32;
+    let lo_count = core::arch::x86_64::_popcnt64(lo as i64) as u8;
 
     let (part, base, n) = if n < lo_count {
         (lo, 0u32, n)
@@ -140,7 +140,7 @@ pub unsafe fn index_of_nth_setbit_x64_bmi(x: u128, n: u32) -> u32 {
 
     base + core::arch::x86_64::_tzcnt_u64(sel) as u32
 }
-pub fn index_of_nth_setbit_fallback(x: u128, n: u32) -> u32 {
+pub fn index_of_nth_setbit_fallback(x: u128, n: u8) -> u32 {
     // safety: right here we actually dont care about the validity of the board
     BoardMoveIterU128::new(unsafe { BoardMajorBitset::new_unchecked(x) })
         .nth(n as usize)

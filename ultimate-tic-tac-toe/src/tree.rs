@@ -8,6 +8,7 @@ use crate::{
     bitmagic,
     board::one_bit::OneBitBoard,
     consts::{self, N_CELLS},
+    rng,
     types::{BoardState, Player},
     util::BoardMajorBitset,
 };
@@ -153,8 +154,8 @@ impl NodeState {
         );
 
         while !(has_won || available_moves.is_empty()) {
-            let n_moves = bitmagic::count_ones(available_moves.get());
-            let rand_nth_setbit = rand::random_range(0..n_moves);
+            let n_moves = bitmagic::count_ones(available_moves.get()) as u8;
+            let rand_nth_setbit = rng::rand_in_move_range_exclusive(n_moves);
             let rand_move =
                 bitmagic::index_of_nth_setbit(available_moves.get(), rand_nth_setbit) as u8;
             (game, has_won) = game.apply_move(rand_move);
@@ -340,14 +341,14 @@ impl Tree {
         }
 
         if unvisited_edge_counter != 0 {
-            let rand_idx = rand::random_range(0..unvisited_edge_counter);
-            let rand_unvisited_edge_relative_idx = self.edge_selection_buf[rand_idx];
+            let rand_idx = rng::rand_in_move_range_exclusive(unvisited_edge_counter as u8);
+            let rand_unvisited_edge_relative_idx = self.edge_selection_buf[rand_idx as usize];
             let move_ = bitmagic::index_of_nth_setbit(
                 parent_node
                     .game_state
                     .available_in_board_or_fallback()
                     .get(),
-                rand_unvisited_edge_relative_idx,
+                rand_unvisited_edge_relative_idx as u8,
             ) as u8;
             let current_state = parent_node.game_state;
             let child_node_idx = self.get_or_insert_node(current_state, move_);
