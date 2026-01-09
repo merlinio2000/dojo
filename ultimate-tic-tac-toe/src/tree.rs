@@ -78,6 +78,26 @@ impl Tree {
         this
     }
 
+    /// changes the root by choosing the child with the corresponding move
+    /// # Returns
+    /// the index of the new root
+    pub fn apply_explored_move(&mut self, move_: u8) -> NodeIdx {
+        let root_node = self.nodes[self.root as usize];
+        assert_ne!(root_node.child_count, 0);
+
+        let edges = &self.edges[root_node.first_edge as usize
+            ..(root_node.first_edge as usize + root_node.child_count as usize)];
+        let target_edge = edges
+            .iter()
+            .find(|edge| edge.move_ == move_)
+            .expect("move to apply must have been explored previously");
+        self.root = target_edge
+            .child_node
+            .expect("explored edges must have their child_node set")
+            .get();
+        self.root
+    }
+
     fn insert_root_node(&mut self) -> NodeIdx {
         let idx = self.nodes.len() as u32;
 
@@ -145,6 +165,10 @@ impl Tree {
         for _i in 0..300_000 {
             let _score_from_leaf = self.expand(self.root);
         }
+        self.best_explored_move()
+    }
+
+    fn best_explored_move(&self) -> u8 {
         let root_node = &self.nodes[self.root as usize];
         self.edges[root_node.first_edge as usize
             ..root_node.first_edge as usize + root_node.child_count as usize]
@@ -291,5 +315,26 @@ mod test {
             tree.nodes[defined_root_children_nodes[0].get() as usize].visits,
             1
         );
+    }
+
+    #[test]
+    fn apply_move() {
+        let mut tree = Tree::new();
+        tree.expand(tree.root);
+        let move_to_apply = tree.best_explored_move();
+        let new_root = tree.apply_explored_move(move_to_apply);
+        assert_eq!(new_root, 1);
+        assert_eq!(tree.root, new_root);
+
+        tree.expand(new_root);
+        let new_root_node = &tree.nodes[tree.root as usize];
+        let edges_of_new_root = &tree.edges[(new_root_node.first_edge as usize)
+            ..(new_root_node.first_edge as usize + new_root_node.child_count as usize)];
+
+        let defined_children_cnt = edges_of_new_root
+            .iter()
+            .filter(|edge| edge.child_node.is_some())
+            .count();
+        assert_eq!(defined_children_cnt, 1);
     }
 }
