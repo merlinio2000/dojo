@@ -34,7 +34,7 @@ pub enum Player {
 impl Player {
     // PERF: could technically be just a `| 0b10`
     // asm shows this is already the case
-    pub fn cell_state(&self) -> CellState {
+    pub const fn cell_state(&self) -> CellState {
         match self {
             Player::Player1 => CellState::Player1,
             Player::Player2 => CellState::Player2,
@@ -42,10 +42,19 @@ impl Player {
     }
     // PERF: could technically be just a bitflip
     // asm shows this is already the case
-    pub fn other(&self) -> Player {
+    pub const fn other(&self) -> Player {
         match self {
             Player::Player1 => Player::Player2,
             Player::Player2 => Player::Player1,
+        }
+    }
+
+    pub(crate) const fn from_is_player2(is_player2: bool) -> Self {
+        // TODO PERF check that this is the identity function
+        if is_player2 {
+            Self::Player2
+        } else {
+            Self::Player1
         }
     }
 }

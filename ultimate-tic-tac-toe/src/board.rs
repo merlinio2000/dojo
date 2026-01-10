@@ -6,7 +6,7 @@ use crate::{
 
 pub mod move_finder;
 pub mod move_iter;
-pub mod nested;
+pub mod one_bit;
 
 // 2 bits per cell
 // bit1: is occupied (bool)
@@ -153,14 +153,6 @@ impl Board {
         unsafe { self.find_best_move_score_inner(player, move_calc) }
     }
 
-    /// # Safety:
-    /// requires cpu features:
-    /// - bmi1
-    /// - bmi2
-    #[target_feature(enable = "avx")]
-    #[target_feature(enable = "avx2")]
-    #[target_feature(enable = "bmi1")]
-    #[target_feature(enable = "bmi2")]
     unsafe fn find_best_move_score_inner(
         self,
         player: Player,

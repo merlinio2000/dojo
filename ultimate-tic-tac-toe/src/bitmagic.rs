@@ -1,4 +1,4 @@
-use crate::consts;
+use crate::{board::move_iter::BoardMoveIterU128, consts, util::BoardMajorBitset};
 
 pub(crate) const fn trailing_zeros(bits: u32) -> u32 {
     // safety: this may only be run on modern x86 cpus, main asserts feature is available
@@ -7,7 +7,7 @@ pub(crate) const fn trailing_zeros(bits: u32) -> u32 {
         trailing_zeros_x86_bmi1(bits)
     }
     #[cfg(not(target_arch = "x86_64"))]
-    trailing_zeros_fallback(board_state)
+    trailing_zeros_fallback(bits)
 }
 
 /// safety: make sure this is run on x86-64 with bmi1 enabled
@@ -21,6 +21,29 @@ const unsafe fn trailing_zeros_x86_bmi1(bits: u32) -> u32 {
 
 #[allow(unused)]
 const fn trailing_zeros_fallback(bits: u32) -> u32 {
+    bits.trailing_zeros()
+}
+
+pub(crate) const fn trailing_zeros_u128(bits: u128) -> u32 {
+    // safety: this may only be run on modern x86 cpus, main asserts feature is available
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        trailing_zeros_u128_x86_bmi1(bits)
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    trailing_zeros_u128_fallback(bits)
+}
+
+/// safety: make sure this is run on x86-64 with bmi1 enabled
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "bmi1")]
+const unsafe fn trailing_zeros_u128_x86_bmi1(bits: u128) -> u32 {
+    // NOTE: the bmi1 feature ensures this is compiled to tzcnt
+    bits.trailing_zeros()
+}
+
+#[allow(unused)]
+const fn trailing_zeros_u128_fallback(bits: u128) -> u32 {
     bits.trailing_zeros()
 }
 
@@ -66,6 +89,62 @@ pub(crate) fn get_availble_bits_contiguous(board_state: u32) -> u32 {
     }
     #[cfg(not(target_arch = "x86_64"))]
     get_availble_bits_contiguous_fallback(board_state)
+}
+
+pub(crate) const fn count_ones(bits: u128) -> u32 {
+    // safety: this may only be run on modern x86 cpus, main asserts feature is available
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        count_ones_x86_popcnt(bits)
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    bits.count_ones()
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "bmi1")]
+#[target_feature(enable = "bmi2")]
+#[target_feature(enable = "sse3")]
+#[target_feature(enable = "sse4.2")]
+#[target_feature(enable = "popcnt")]
+const fn count_ones_x86_popcnt(bits: u128) -> u32 {
+    bits.count_ones()
+}
+pub fn index_of_nth_setbit(x: u128, n: u8) -> u32 {
+    // safety: this may only be run on modern x86 cpus, main asserts feature is available
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        index_of_nth_setbit_x64_bmi(x, n)
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    index_of_nth_setbit_fallback(x, n)
+}
+
+/// # Safety
+/// requires cpu features popcnt,bmi,bmi2
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "popcnt,bmi1,bmi2")]
+pub unsafe fn index_of_nth_setbit_x64_bmi(x: u128, n: u8) -> u32 {
+    let lo: u64 = x as u64;
+    let hi: u64 = (x >> 64) as u64;
+
+    let lo_count = core::arch::x86_64::_popcnt64(lo as i64) as u8;
+
+    let (part, base, n) = if n < lo_count {
+        (lo, 0u32, n)
+    } else {
+        (hi, 64u32, n - lo_count)
+    };
+
+    let sel = core::arch::x86_64::_pdep_u64(1u64 << n, part);
+
+    base + core::arch::x86_64::_tzcnt_u64(sel) as u32
+}
+pub fn index_of_nth_setbit_fallback(x: u128, n: u8) -> u32 {
+    // safety: right here we actually dont care about the validity of the board
+    BoardMoveIterU128::new(unsafe { BoardMajorBitset::new_unchecked(x) })
+        .nth(n as usize)
+        .expect("not enough bits set to get the n-th index")
 }
 
 #[cfg(test)]

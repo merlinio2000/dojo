@@ -1,6 +1,7 @@
 use crate::{
     bitmagic,
     types::{BoardState, Index},
+    util::BoardMajorBitset,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -39,6 +40,35 @@ impl BoardMoveIter {
         let available_bits_contiguous = bitmagic::get_availble_bits_contiguous(board_state);
         Self {
             is_available_bitset: available_bits_contiguous,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct BoardMoveIterU128 {
+    is_available_bitset: BoardMajorBitset,
+}
+
+impl Iterator for BoardMoveIterU128 {
+    type Item = Index;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.is_available_bitset.is_empty() {
+            None
+        } else {
+            let available_cell_index =
+                bitmagic::trailing_zeros_u128(self.is_available_bitset.get());
+
+            self.is_available_bitset.unset_least_signifiact_one();
+            Some(available_cell_index as Index)
+        }
+    }
+}
+
+impl BoardMoveIterU128 {
+    pub fn new(is_available_bitset: BoardMajorBitset) -> Self {
+        Self {
+            is_available_bitset,
         }
     }
 }
