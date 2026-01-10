@@ -162,7 +162,7 @@ impl Tree {
 
     /// should only be called if root is not at a terminal state
     pub fn search(&mut self) -> u8 {
-        for _i in 0..300_000 {
+        for _i in 0..50_000 {
             let _score_from_leaf = self.expand(self.root);
         }
         self.best_explored_move()

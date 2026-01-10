@@ -4,4 +4,4 @@ pub mod consts;
 mod rng;
 pub mod tree;
 pub mod types;
-mod util;
+pub mod util;

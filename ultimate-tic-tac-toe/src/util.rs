@@ -40,6 +40,35 @@ pub(crate) const fn repeat_bitpattern(pattern: u32, width: NonZeroU8, n: NonZero
     result
 }
 
+/// see [`BoardMajorBitset`] for the layout
+pub fn to_board_col_major_move(row: u8, col: u8) -> u8 {
+    let board_idx_row = row / consts::ROWS as u8;
+    let row_in_board = row % consts::ROWS as u8;
+    let board_idx_col = col / consts::COLS as u8;
+    let col_in_board = col % consts::COLS as u8;
+
+    let board_idx = board_idx_row * consts::COLS as u8 + board_idx_col;
+    let idx_in_board = row_in_board * consts::COLS as u8 + col_in_board;
+
+    board_idx * consts::N_CELLS as u8 + idx_in_board
+}
+///
+/// see [`BoardMajorBitset`] for the layout
+pub fn board_col_major_move_to_2d(board_col_major_move: u8) -> (u8, u8) {
+    let board_idx = board_col_major_move / consts::N_BOARDS as u8;
+    let idx_in_board = board_col_major_move % consts::N_BOARDS as u8;
+
+    let board_row = board_idx / consts::ROWS as u8;
+    let board_col = board_idx % consts::COLS as u8;
+
+    let row_in_board = idx_in_board / consts::ROWS as u8;
+    let col_in_board = idx_in_board % consts::COLS as u8;
+
+    let row = board_row * consts::ROWS as u8 + row_in_board;
+    let col = board_col * consts::COLS as u8 + col_in_board;
+    (row, col)
+}
+
 /// +----+----+----+----+----+----+----+----+----+
 /// |  0 |  3 |  6 | 27 | 30 | 33 | 54 | 57 | 60 |
 /// +----+----+----+----+----+----+----+----+----+
