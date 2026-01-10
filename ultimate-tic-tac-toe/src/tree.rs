@@ -2,6 +2,8 @@ use std::{
     collections::{HashMap, hash_map::Entry},
     iter,
     num::NonZero,
+    sync::{atomic::AtomicBool, mpsc},
+    time::Instant,
 };
 
 use crate::{
@@ -98,6 +100,36 @@ impl Tree {
         self.root
     }
 
+    pub fn apply_maybe_explored_move(&mut self, move_: u8) -> NodeIdx {
+        let root_node = self.nodes[self.root as usize];
+        assert_ne!(root_node.child_count, 0);
+
+        let edges = &self.edges[root_node.first_edge as usize
+            ..(root_node.first_edge as usize + root_node.child_count as usize)];
+        let target_edge_opt = edges.iter().find(|edge| edge.move_ == move_);
+        if let Some(target_edge) = target_edge_opt {
+            self.root = target_edge
+                .child_node
+                .expect("explored edges must have their child_node set")
+                .get();
+        } else {
+            let available_moves: u128 = root_node.game_state.available_in_board_or_fallback().get();
+            // remove all moves including and above the selected, the index of the move is the
+            // amount of less significant 1
+            let available_moves = available_moves << (128 - move_);
+            let move_edge_idx = bitmagic::count_ones(available_moves);
+            debug_assert_eq!(edges[move_edge_idx as usize].child_node, None);
+            debug_assert_eq!(edges[move_edge_idx as usize].move_, 0);
+
+            let child_node = self.get_or_insert_node(root_node.game_state, move_);
+
+            let edge_for_move = &mut self.edges[(root_node.first_edge + move_edge_idx) as usize];
+            edge_for_move.move_ = move_;
+            edge_for_move.child_node = NonZero::new(child_node);
+        }
+        self.root
+    }
+
     fn insert_root_node(&mut self) -> NodeIdx {
         let idx = self.nodes.len() as u32;
 
@@ -161,14 +193,27 @@ impl Tree {
     }
 
     /// should only be called if root is not at a terminal state
-    pub fn search(&mut self) -> u8 {
-        for _i in 0..50_000 {
+    pub fn search(&mut self) {
+        self.search_n(50_000);
+    }
+    pub fn search_n(&mut self, n: usize) {
+        for _i in 0..n {
             let _score_from_leaf = self.expand(self.root);
         }
-        self.best_explored_move()
+    }
+    pub fn search_flag(&mut self, keep_going: AtomicBool) {
+        // TOOD: i think this ordering is fine but don't know for sure
+        while keep_going.load(std::sync::atomic::Ordering::Acquire) {
+            let _score_from_leaf = self.expand(self.root);
+        }
+    }
+    pub fn search_until(&mut self, instant: Instant) {
+        while instant > Instant::now() {
+            let _score_from_leaf = self.expand(self.root);
+        }
     }
 
-    fn best_explored_move(&self) -> u8 {
+    pub fn best_explored_move(&self) -> u8 {
         let root_node = &self.nodes[self.root as usize];
         self.edges[root_node.first_edge as usize
             ..root_node.first_edge as usize + root_node.child_count as usize]
@@ -282,7 +327,8 @@ mod test {
     #[test]
     fn search_works_on_root() {
         let mut tree = Tree::new();
-        let chosen_move = tree.search();
+        tree.search();
+        let chosen_move = tree.best_explored_move();
         assert!((0..consts::N_CELLS_NESTED as u8).contains(&chosen_move));
     }
 
