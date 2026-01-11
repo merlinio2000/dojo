@@ -6,8 +6,9 @@ use crate::{consts, types::BoardState};
 pub struct OneBitBoard(BoardState);
 
 impl OneBitBoard {
+    const MASK: BoardState = 0b1_1111_1111;
     pub const fn new(state: BoardState) -> Self {
-        OneBitBoard(state)
+        OneBitBoard(state & Self::MASK)
     }
     pub fn has_won(&self) -> bool {
         // TODO MERBUG: clippy heuristic for manual_contains is incorrect, maybe open a PR/bug
