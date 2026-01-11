@@ -57,13 +57,13 @@ impl NodeState {
         Player::from_is_player2((self.meta_player2() >> Self::PLAYER_OFFSET_IN_META) & 0b1 != 0)
     }
 
-    const fn super_board_for_player(&self, player: Player) -> BoardState {
+    pub(super) const fn super_board_for_player(&self, player: Player) -> BoardState {
         self.meta_player(player) >> Self::SUPER_BOARD_OFFSET_IN_META
     }
 
-    const fn get_player_board(&self, player: Player, board_idx: u8) -> OneBitBoard {
+    pub(super) const fn get_player_board(&self, player: Player, board_idx: u8) -> OneBitBoard {
         OneBitBoard::new(
-            (self.bits[player as usize] >> (board_idx as u32 * consts::N_CELLS)) as BoardState,
+            (self.bits[player as usize] >> (board_idx * consts::N_CELLS as u8)) as BoardState,
         )
     }
     pub(super) fn available_in_board_or_fallback(&self) -> BoardMajorBitset {
@@ -111,7 +111,8 @@ impl NodeState {
 
         if has_won_subboard {
             // block all cells in that board (simpler logic for available moves)
-            child_state.bits[player as usize] |= 0b1_1111_1111 << board_idx;
+            child_state.bits[player as usize] |=
+                0b1_1111_1111 << (board_idx * consts::N_CELLS as u8);
             // track wins in super board (specific to each player, not in general meta)
             child_state.bits[player as usize] |=
                 1 << (Self::META_OFFSET + Self::SUPER_BOARD_OFFSET_IN_META + board_idx);

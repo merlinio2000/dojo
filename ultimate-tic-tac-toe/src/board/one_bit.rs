@@ -17,8 +17,11 @@ impl OneBitBoard {
             .iter()
             .any(|mask| *mask & self.0 == *mask)
     }
-    pub fn set_cell(&mut self, cell: u8) {
+    pub const fn set_cell(&mut self, cell: u8) {
         debug_assert!(cell < consts::N_CELLS as u8);
         self.0 |= 1 << cell;
+    }
+    pub const fn get(&self) -> BoardState {
+        self.0
     }
 }
