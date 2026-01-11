@@ -107,8 +107,8 @@ fn run_v2() {
             .split_once(' ')
             .expect("opponent input should have a space");
         let (opp_row, opp_col) = (
-            opp_row.parse::<i32>().expect("opp_row is not usize"),
-            opp_col.parse::<i32>().expect("opp_col is not usize"),
+            opp_row.parse::<i32>().expect("opp_row is not i32"),
+            opp_col.parse::<i32>().expect("opp_col is not i32"),
         );
 
         // read and discard available inputs
@@ -123,7 +123,7 @@ fn run_v2() {
         let turn_start = Instant::now();
 
         // -1 == initial turn (if ours)
-        if opp_row > 0 {
+        if opp_row >= 0 {
             let board_col_major_move = util::to_board_col_major_move(opp_row as u8, opp_col as u8);
             tree.apply_maybe_explored_move(board_col_major_move);
             tree.search_until(turn_start + TURN_TIME);
