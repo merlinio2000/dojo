@@ -96,7 +96,6 @@ fn run_v2() {
     };
     let mut tree = Tree::new();
 
-    // TODO: run longer on init
     tree.search_until(inital_end_time);
     let mut best_move = tree.best_explored_move();
 

@@ -2,7 +2,7 @@ use std::{
     collections::{HashMap, hash_map::Entry},
     iter,
     num::NonZero,
-    sync::{atomic::AtomicBool, mpsc},
+    sync::atomic::AtomicBool,
     time::Instant,
 };
 
@@ -330,6 +330,57 @@ mod test {
         tree.search();
         let chosen_move = tree.best_explored_move();
         assert!((0..consts::N_CELLS_NESTED as u8).contains(&chosen_move));
+    }
+
+    #[test]
+    fn children_are_explored_first() {
+        let mut tree = Tree::new();
+        let root = &tree.nodes[tree.root as usize];
+        assert_eq!(root.child_count, consts::N_CELLS_NESTED as u8);
+        assert_eq!(tree.nodes.len(), 1);
+        assert_eq!(tree.edges.len(), consts::N_CELLS_NESTED as usize);
+        tree.search_n(consts::N_CELLS_NESTED as usize);
+        assert_eq!(tree.nodes.len(), 1 + consts::N_CELLS_NESTED as usize);
+
+        let root = &tree.nodes[tree.root as usize];
+        let edges = &tree.edges
+            [root.first_edge as usize..(root.first_edge as usize + root.child_count as usize)];
+        assert_eq!(edges.len(), consts::N_CELLS_NESTED as usize);
+
+        for (i, edge) in edges.iter().enumerate() {
+            assert_eq!(edge.move_, i as u8);
+            match edge.child_node {
+                None => panic!("child {i} must have been explored"),
+                Some(child_node) => {
+                    let child_node = &tree.nodes[child_node.get() as usize];
+                    assert_eq!(child_node.visits, 1);
+                }
+            }
+        }
+
+        let move_ = 0;
+        tree.apply_explored_move(move_);
+        // we placed in the top left corner of the top left board, forcing top left board again
+        // with 8 possible moves
+        tree.search_n(consts::N_CELLS as usize - 1);
+        let root = &tree.nodes[tree.root as usize];
+        assert_eq!(root.visits, consts::N_CELLS);
+        let edges = &tree.edges
+            [root.first_edge as usize..(root.first_edge as usize + root.child_count as usize)];
+        assert_eq!(edges.len(), consts::N_CELLS as usize - 1);
+
+        for (i, edge) in edges.iter().enumerate() {
+            // first available move is move 1
+            let i = i + 1;
+            assert_eq!(edge.move_, i as u8);
+            match edge.child_node {
+                None => panic!("move {i} must have been explored"),
+                Some(child_node) => {
+                    let child_node = &tree.nodes[child_node.get() as usize];
+                    assert_eq!(child_node.visits, 1);
+                }
+            }
+        }
     }
 
     #[test]
