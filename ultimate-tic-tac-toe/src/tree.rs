@@ -126,6 +126,7 @@ impl Tree {
             let edge_for_move = &mut self.edges[(root_node.first_edge + move_edge_idx) as usize];
             edge_for_move.move_ = move_;
             edge_for_move.child_node = NonZero::new(child_node);
+            self.root = child_node;
         }
         self.root
     }
