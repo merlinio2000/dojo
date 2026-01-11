@@ -149,7 +149,7 @@ pub fn index_of_nth_setbit_fallback(x: u128, n: u8) -> u32 {
 
 #[cfg(test)]
 mod test {
-    use crate::bitmagic::get_availble_bits_contiguous_fallback;
+    use crate::bitmagic::{get_availble_bits_contiguous_fallback, index_of_nth_setbit};
 
     #[cfg(target_arch = "x86_64")]
     #[test]
@@ -187,5 +187,34 @@ mod test {
         #[allow(clippy::unusual_byte_groupings)]
         let bits = get_availble_bits_contiguous_fallback(0b10__1010_1010_1010_1000);
         assert_eq!(bits, 0b1);
+    }
+
+    #[test]
+    fn test_index_of_nth_setbit() {
+        for shift in [0, 16, 32, 48, 64, 80, 96, 112] {
+            let msg = format!("with a shift of {shift}");
+            let bits = 0b1u128;
+            assert_eq!(index_of_nth_setbit(bits, 0), 0, "{msg}");
+
+            let bits = 0b10u128;
+            assert_eq!(index_of_nth_setbit(bits, 0), 1, "{msg}");
+
+            let bits = 0b11u128;
+            assert_eq!(index_of_nth_setbit(bits, 0), 0, "{msg}");
+            assert_eq!(index_of_nth_setbit(bits, 1), 1, "{msg}");
+
+            let bits = 0b110u128;
+            assert_eq!(index_of_nth_setbit(bits, 0), 1, "{msg}");
+            assert_eq!(index_of_nth_setbit(bits, 1), 2, "{msg}");
+
+            let bits = 0b1101u128;
+            assert_eq!(index_of_nth_setbit(bits, 0), 0, "{msg}");
+            assert_eq!(index_of_nth_setbit(bits, 1), 2, "{msg}");
+            assert_eq!(index_of_nth_setbit(bits, 2), 3, "{msg}");
+        }
+
+        let bits = 0b1 | (0b1 << 64);
+        assert_eq!(index_of_nth_setbit(bits, 0), 0);
+        assert_eq!(index_of_nth_setbit(bits, 1), 64);
     }
 }

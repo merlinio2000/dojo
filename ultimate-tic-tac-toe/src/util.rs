@@ -168,3 +168,81 @@ impl std::ops::BitOr for BoardMajorBitset {
         unsafe { Self::new_unchecked(self.0 | rhs.0) }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        consts,
+        util::{board_col_major_move_to_2d, to_board_col_major_move},
+    };
+
+    #[test]
+    fn from_board_col_major_to_2d() {
+        assert_eq!(board_col_major_move_to_2d(0), (0, 0));
+        assert_eq!(board_col_major_move_to_2d(1), (1, 0));
+        assert_eq!(board_col_major_move_to_2d(2), (2, 0));
+        assert_eq!(board_col_major_move_to_2d(3), (0, 1));
+        assert_eq!(board_col_major_move_to_2d(4), (1, 1));
+        assert_eq!(board_col_major_move_to_2d(5), (2, 1));
+        assert_eq!(board_col_major_move_to_2d(6), (0, 2));
+        assert_eq!(board_col_major_move_to_2d(7), (1, 2));
+        assert_eq!(board_col_major_move_to_2d(8), (2, 2));
+
+        assert_eq!(board_col_major_move_to_2d(9), (3, 0));
+        assert_eq!(board_col_major_move_to_2d(10), (4, 0));
+        assert_eq!(board_col_major_move_to_2d(11), (5, 0));
+        assert_eq!(board_col_major_move_to_2d(12), (3, 1));
+        assert_eq!(board_col_major_move_to_2d(13), (4, 1));
+
+        assert_eq!(
+            board_col_major_move_to_2d(3 * consts::N_CELLS as u8),
+            (0, 3)
+        );
+        assert_eq!(
+            board_col_major_move_to_2d(3 * consts::N_CELLS as u8 + 1),
+            (1, 3)
+        );
+        assert_eq!(
+            board_col_major_move_to_2d(3 * consts::N_CELLS as u8 + 3),
+            (0, 4)
+        );
+        assert_eq!(
+            board_col_major_move_to_2d(4 * consts::N_CELLS as u8),
+            (3, 3)
+        );
+
+        assert_eq!(
+            board_col_major_move_to_2d(consts::N_CELLS_NESTED as u8 - 1),
+            (8, 8)
+        );
+    }
+
+    #[test]
+    fn to_board_col_major_from_2d() {
+        assert_eq!(to_board_col_major_move(0, 0), 0);
+        assert_eq!(to_board_col_major_move(1, 0), 1);
+        assert_eq!(to_board_col_major_move(2, 0), 2);
+        assert_eq!(to_board_col_major_move(0, 1), 3);
+        assert_eq!(to_board_col_major_move(1, 1), 4);
+        assert_eq!(to_board_col_major_move(2, 1), 5);
+        assert_eq!(to_board_col_major_move(0, 2), 6);
+        assert_eq!(to_board_col_major_move(1, 2), 7);
+        assert_eq!(to_board_col_major_move(2, 2), 8);
+
+        assert_eq!(to_board_col_major_move(3, 0), 9);
+        assert_eq!(to_board_col_major_move(4, 0), 10);
+        assert_eq!(to_board_col_major_move(5, 0), 11);
+        assert_eq!(to_board_col_major_move(3, 1), 12);
+        assert_eq!(to_board_col_major_move(4, 1), 13);
+
+        assert_eq!(to_board_col_major_move(0, 3), 3 * consts::N_CELLS as u8,);
+        assert_eq!(to_board_col_major_move(1, 3), 3 * consts::N_CELLS as u8 + 1,);
+        assert_eq!(to_board_col_major_move(0, 4), 3 * consts::N_CELLS as u8 + 3,);
+        assert_eq!(to_board_col_major_move(3, 3), 4 * consts::N_CELLS as u8,);
+
+        assert_eq!(
+            to_board_col_major_move(8, 8),
+            consts::N_CELLS_NESTED as u8 - 1,
+        );
+    }
+}
