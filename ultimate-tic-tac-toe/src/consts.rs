@@ -86,7 +86,7 @@ pub const MASKS_ROW: [BoardState; ROWS as usize] =
 ///                                        6   3  0
 pub const MASK_ROW_1BIT: BoardState = 0b0_0100_1001;
 pub const MASKS_ROW_1BIT: [BoardState; ROWS as usize] =
-    build_3_cell_shifted_masks::<CELL_BITS>(MASK_ROW_1BIT);
+    build_3_cell_shifted_masks::<1>(MASK_ROW_1BIT);
 
 //                                                 6  5 4  3 2  1 0
 pub const MASK_RESULT_ROW_PLAYER1: BoardState = 0b10_0000_1000_0010;
