@@ -277,7 +277,7 @@ impl Tree {
             self.edges[edge_absolute_idx].move_ = move_;
 
             let new_child_node = &mut self.nodes[child_node_idx as usize];
-            new_child_node.score = new_child_node
+            new_child_node.score += new_child_node
                 .game_state
                 .into_simulation()
                 .simulate_random();
