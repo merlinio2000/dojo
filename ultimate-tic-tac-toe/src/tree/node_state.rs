@@ -30,6 +30,8 @@ impl NodeState {
     const PLAYER_OFFSET_IN_META: u8 = 16;
     const SUPER_BOARD_OFFSET_IN_META: u8 = 23;
     const META_MASK: u32 = u32::MAX;
+    //                        player -|   forced_board -|:|
+    const META_BITS_TO_CLEAR: u32 = 0b1_1111_1111_1111_1111;
     pub(super) const fn empty() -> Self {
         Self {
             bits: [0, (NO_MOVE_FORCED as u128) << Self::META_OFFSET],
@@ -118,7 +120,7 @@ impl NodeState {
 
         // clear meta bits before setting
         child_state.bits[Player::Player2 as usize] &=
-            !((Self::META_MASK as u128) << Self::META_OFFSET);
+            !((Self::META_BITS_TO_CLEAR as u128) << Self::META_OFFSET);
         child_state.bits[Player::Player2 as usize] |=
             (new_general_meta as u128) << Self::META_OFFSET;
         let won_game = if has_won_subboard {
