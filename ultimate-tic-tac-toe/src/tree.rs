@@ -57,7 +57,7 @@ impl Default for Tree {
 }
 
 impl Tree {
-    const INITIAL_N_NODES: usize = 500_000;
+    const INITIAL_N_NODES: usize = 5_000_000;
     /// pulled straight out of where the sun dont shine
     const GUESSTIMATE_AVG_CHILDREN: usize = 30;
 
