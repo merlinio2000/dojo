@@ -25,3 +25,53 @@ impl OneBitBoard {
         self.0
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::board::one_bit::OneBitBoard;
+
+    #[test]
+    fn has_won_horizontal_top_row() {
+        let board = OneBitBoard::new(0b001_001_001);
+        assert!(board.has_won());
+        let board = OneBitBoard::new(0b010_010_010);
+        assert!(board.has_won());
+        let board = OneBitBoard::new(0b100_100_100);
+        assert!(board.has_won());
+    }
+
+    #[test]
+    fn has_won_vertical_left_column() {
+        let board = OneBitBoard::new(0b000_000_111);
+        assert!(board.has_won());
+        let board = OneBitBoard::new(0b000_111_000);
+        assert!(board.has_won());
+        let board = OneBitBoard::new(0b111_000_000);
+        assert!(board.has_won());
+    }
+
+    #[test]
+    fn has_won_diagonal() {
+        let board = OneBitBoard::new(0b100_010_001);
+        assert!(board.has_won());
+        let board = OneBitBoard::new(0b001_010_100);
+        assert!(board.has_won());
+    }
+
+    #[test]
+    fn has_not_won() {
+        let board = OneBitBoard::new(0b000_001_001);
+        assert!(!board.has_won());
+        let board = OneBitBoard::new(0b010_010_001);
+        assert!(!board.has_won());
+        let board = OneBitBoard::new(0b000_000_000);
+        assert!(!board.has_won());
+    }
+
+    #[test]
+    fn has_won_with_extra_bits_set() {
+        // top row (0,3,6) plus noise bits
+        let board = OneBitBoard::new(0b101_001_001);
+        assert!(board.has_won());
+    }
+}
