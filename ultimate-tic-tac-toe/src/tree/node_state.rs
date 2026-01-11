@@ -28,8 +28,7 @@ pub(super) struct NodeState {
 impl NodeState {
     const META_OFFSET: u8 = (128 - 32);
     const PLAYER_OFFSET_IN_META: u8 = 16;
-    const SUPER_BOARD_OFFSET_IN_META: u8 = 23;
-    const META_MASK: u32 = u32::MAX;
+    const SUPER_BOARD_OFFSET_IN_META: u8 = 32 - consts::N_BOARDS as u8;
     //                        player -|   forced_board -|:|
     const META_BITS_TO_CLEAR: u32 = 0b1_1111_1111_1111_1111;
     pub(super) const fn empty() -> Self {
@@ -37,10 +36,10 @@ impl NodeState {
             bits: [0, (NO_MOVE_FORCED as u128) << Self::META_OFFSET],
         }
     }
-    const fn player1_occupied(&self) -> BoardMajorBitset {
+    pub(super) const fn player1_occupied(&self) -> BoardMajorBitset {
         BoardMajorBitset::new_truncated(self.bits[0])
     }
-    const fn player2_occupied(&self) -> BoardMajorBitset {
+    pub(super) const fn player2_occupied(&self) -> BoardMajorBitset {
         BoardMajorBitset::new_truncated(self.bits[1])
     }
 
@@ -51,7 +50,7 @@ impl NodeState {
     const fn meta_player2(&self) -> u32 {
         self.meta_player(Player::Player2)
     }
-    const fn forced_board(&self) -> u8 {
+    pub(super) const fn forced_board(&self) -> u8 {
         self.meta_player2() as u8
     }
     const fn active_player(&self) -> Player {
@@ -140,5 +139,67 @@ impl NodeState {
             self.active_player(),
             self.forced_board(),
         )
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{consts, tree::NodeState};
+
+    #[test]
+    fn test_apply_move() {
+        // ignore that this test disregards rules, we want to reach a sub board win as quickly as
+        // possible
+        let state = NodeState::empty();
+        let (state, won) = state.apply_move(0);
+        assert!(!won);
+        assert_eq!(state.player1_occupied().get(), 0b1);
+        assert_eq!(state.player2_occupied().get(), 0b0);
+        assert_eq!(state.forced_board(), 0);
+        assert_eq!(state.available_in_board_or_fallback().get(), 0b1_1111_1110);
+
+        let (state, won) = state.apply_move(4);
+        assert!(!won);
+        assert_eq!(state.player1_occupied().get(), 0b0_0001);
+        assert_eq!(state.player2_occupied().get(), 0b1_0000);
+        assert_eq!(state.forced_board(), 4);
+        assert_eq!(
+            state.available_in_board_or_fallback().get(),
+            0b1_1111_1111 << (state.forced_board() * consts::N_CELLS as u8)
+        );
+
+        let (state, won) = state.apply_move(1);
+        assert!(!won);
+        assert_eq!(state.player1_occupied().get(), 0b0_0011);
+        assert_eq!(state.player2_occupied().get(), 0b1_0000);
+        assert_eq!(state.forced_board(), 1);
+        assert_eq!(
+            state.available_in_board_or_fallback().get(),
+            0b1_1111_1111 << (state.forced_board() * consts::N_CELLS as u8)
+        );
+
+        let cell_idx = 3 * consts::N_CELLS as u8 + 4;
+        let (state, won) = state.apply_move(cell_idx);
+        assert!(!won);
+        assert_eq!(state.player1_occupied().get(), 0b0_0011);
+        assert_eq!(state.player2_occupied().get(), 0b1_0000 | (0b1 << cell_idx));
+        assert_eq!(state.forced_board(), 4);
+        assert_eq!(
+            state.available_in_board_or_fallback().get(),
+            0b1_1111_1111 << (state.forced_board() * consts::N_CELLS as u8)
+        );
+
+        let (state, won) = state.apply_move(2);
+        assert!(!won);
+        assert_eq!(state.player1_occupied().get(), 0b1_1111_1111);
+        assert_eq!(
+            state.player2_occupied().get(),
+            0b0_0001_0000 | (0b1 << cell_idx)
+        );
+        assert_eq!(state.forced_board(), 2);
+        assert_eq!(
+            state.available_in_board_or_fallback().get(),
+            0b1_1111_1111 << (state.forced_board() * consts::N_CELLS as u8)
+        );
     }
 }
