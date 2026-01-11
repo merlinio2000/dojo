@@ -1,4 +1,5 @@
 use std::{
+    io::BufRead,
     sync::mpsc,
     thread,
     time::{Duration, Instant},
@@ -59,16 +60,17 @@ fn run_v1() {
 fn spawn_stdin_channel() -> mpsc::Receiver<String> {
     let (tx, rx) = mpsc::channel::<String>();
     thread::spawn(move || {
+        let mut stdin_lock = std::io::stdin().lock();
         loop {
             let mut buffer = String::new();
-            std::io::stdin().read_line(&mut buffer).unwrap();
+            stdin_lock.read_line(&mut buffer).unwrap();
             tx.send(buffer).unwrap();
         }
     });
     rx
 }
 
-const TIMING_TOLERANCE: Duration = Duration::from_millis(3);
+const TIMING_TOLERANCE: Duration = Duration::from_millis(20);
 const FIRST_TURN_TIME: Duration = Duration::from_secs(1)
     .checked_sub(TIMING_TOLERANCE)
     .unwrap();
@@ -112,13 +114,13 @@ fn run_v2() {
         );
 
         // read and discard available inputs
-        let input = calc_while_read_input(&mut tree);
+        let input = input_rx.recv().unwrap();
         let n_available = input
             .trim_end()
             .parse::<usize>()
             .expect("n_available is not a usize");
         for _ in 0..n_available {
-            calc_while_read_input(&mut tree);
+            input_rx.recv().unwrap();
         }
         let turn_start = Instant::now();
 
