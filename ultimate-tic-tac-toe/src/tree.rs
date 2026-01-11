@@ -219,11 +219,10 @@ impl Tree {
         self.edges[root_node.first_edge as usize
             ..root_node.first_edge as usize + root_node.child_count as usize]
             .iter()
-            .max_by_key(|edge| {
-                edge.child_node
-                    .map_or(0, |child_idx| self.nodes[child_idx.get() as usize].visits)
-            })
-            .expect("can not search on terminal node")
+            .filter_map(|edge| edge.child_node.map(|child_node| (edge, child_node)))
+            .max_by_key(|(_, child_node)| self.nodes[child_node.get() as usize].visits)
+            .expect("at least one child must have been explored")
+            .0
             .move_
     }
 
@@ -236,10 +235,9 @@ impl Tree {
             return parent_node.score;
         }
 
-        let edge_offset = parent_node.first_edge;
+        let edge_offset = parent_node.first_edge as usize;
 
-        let edges = &self.edges
-            [edge_offset as usize..(edge_offset as usize + parent_node.child_count as usize)];
+        let edges = &self.edges[edge_offset..(edge_offset + parent_node.child_count as usize)];
         // NOTE PERF: this could be maybe optimized by storing a u128 per node for unvisited
         // children
         // all unvisited edges have an infite UCB so they are all the max and we have to choose one
@@ -270,7 +268,7 @@ impl Tree {
             // NOTE: this should never be zero, a move can not possibly result in the first/empty
             // node as this would mean "un-setting" cells
             debug_assert_ne!(child_node_idx, 0);
-            let edge_absolute_idx = (edge_offset + rand_unvisited_edge_relative_idx) as usize;
+            let edge_absolute_idx = edge_offset + rand_unvisited_edge_relative_idx as usize;
             // NOTE not-resuing local variable edges because it conflicts with the mutable borrow
             // of inserting a node
             self.edges[edge_absolute_idx].child_node = NonZero::new(child_node_idx);
