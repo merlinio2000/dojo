@@ -47,8 +47,8 @@ impl SimulationState {
     /// # Returns
     /// - new node state with move applied (and board bits won if board was won)
     /// - true if the active player won using this move
-    pub(super) fn apply_move(&self, board_col_major_idx: u8) -> (Self, bool) {
-        let mut child_state = *self;
+    pub(super) fn apply_move(self, board_col_major_idx: u8) -> (Self, bool) {
+        let mut child_state = self;
         let player = self.active_player;
 
         let board_idx = board_col_major_idx / consts::N_CELLS as u8;
@@ -104,33 +104,44 @@ impl SimulationState {
     /// - -1 if the not initially active player wins
     /// - 0 for a draw
     /// - 1 if the initally active player wins
-    pub(super) fn simulate_random(self) -> MonteCarloScore {
-        let (mut game, mut has_won) = (self, false);
-        let inital_player = game.active_player;
-        let mut available_moves = game.available_in_board_or_fallback();
+    pub(super) fn simulate_random(mut self) -> MonteCarloScore {
+        debug_assert!(!self.super_boards[0].has_won());
+        debug_assert!(!self.super_boards[1].has_won());
+        let mut has_won = false;
+        let inital_player = self.active_player;
+        let mut available_moves = self.available_in_board_or_fallback();
         debug_assert!(
             !available_moves.is_empty(),
             "can not simulate from a terminal state"
         );
 
         while !(has_won || available_moves.is_empty()) {
-            let n_moves = bitmagic::count_ones(available_moves.get()) as u8;
+            let n_moves = bitmagic::count_ones_u128(available_moves.get()) as u8;
             let rand_nth_setbit = rng::rand_in_move_range_exclusive(n_moves);
             let rand_move =
                 bitmagic::index_of_nth_setbit(available_moves.get(), rand_nth_setbit) as u8;
-            (game, has_won) = game.apply_move(rand_move);
+            (self, has_won) = self.apply_move(rand_move);
 
-            available_moves = game.available_in_board_or_fallback();
+            available_moves = self.available_in_board_or_fallback();
         }
 
         if has_won {
-            let winner = game.active_player.other();
+            let winner = self.active_player.other();
             // branchless score
             // lost: -1 + 0*2 = -1
             // won: -1 + 1*2 = 1
             -1 + ((winner == inital_player) as i32 * 2)
         } else {
-            0
+            let won_board_initial_player =
+                bitmagic::count_ones_u32(self.super_boards[inital_player as usize].get());
+            let won_board_other_player =
+                bitmagic::count_ones_u32(self.super_boards[inital_player.other() as usize].get());
+            // TODO PERF: check if this branches / is optimal
+            match Ord::cmp(&won_board_initial_player, &won_board_other_player) {
+                std::cmp::Ordering::Less => -1,
+                std::cmp::Ordering::Equal => 0,
+                std::cmp::Ordering::Greater => 1,
+            }
         }
     }
 }

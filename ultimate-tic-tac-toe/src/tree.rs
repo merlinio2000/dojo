@@ -117,7 +117,7 @@ impl Tree {
             // remove all moves including and above the selected, the index of the move is the
             // amount of less significant 1
             let available_moves = available_moves << (128 - move_);
-            let move_edge_idx = bitmagic::count_ones(available_moves);
+            let move_edge_idx = bitmagic::count_ones_u128(available_moves);
             debug_assert_eq!(edges[move_edge_idx as usize].child_node, None);
             debug_assert_eq!(edges[move_edge_idx as usize].move_, 0);
 
@@ -137,7 +137,7 @@ impl Tree {
         let node_state = NodeState::empty();
 
         let available_children = node_state.available_in_board_or_fallback();
-        let child_count = bitmagic::count_ones(available_children.get()) as u8;
+        let child_count = bitmagic::count_ones_u128(available_children.get()) as u8;
 
         let first_edge = self.edges.len() as u32;
         // TODO PERF check how well this optimizes (should essentially just advance the len) since the vec is zeroed anyways
@@ -170,7 +170,7 @@ impl Tree {
                     (1, 0)
                 } else {
                     let available_children = new_node_state.available_in_board_or_fallback();
-                    let child_count = bitmagic::count_ones(available_children.get()) as u8;
+                    let child_count = bitmagic::count_ones_u128(available_children.get()) as u8;
                     (0, child_count)
                 };
 
