@@ -235,10 +235,12 @@ mod test {
         assert_eq!(to_board_col_major_move(3, 1), 12);
         assert_eq!(to_board_col_major_move(4, 1), 13);
 
-        assert_eq!(to_board_col_major_move(0, 3), 3 * consts::N_CELLS as u8,);
-        assert_eq!(to_board_col_major_move(1, 3), 3 * consts::N_CELLS as u8 + 1,);
-        assert_eq!(to_board_col_major_move(0, 4), 3 * consts::N_CELLS as u8 + 3,);
-        assert_eq!(to_board_col_major_move(3, 3), 4 * consts::N_CELLS as u8,);
+        assert_eq!(to_board_col_major_move(0, 3), 3 * consts::N_CELLS as u8);
+        assert_eq!(to_board_col_major_move(1, 3), 3 * consts::N_CELLS as u8 + 1);
+        assert_eq!(to_board_col_major_move(0, 4), 3 * consts::N_CELLS as u8 + 3);
+        assert_eq!(to_board_col_major_move(3, 3), 4 * consts::N_CELLS as u8);
+
+        assert_eq!(to_board_col_major_move(8, 7), 80 - 3);
 
         assert_eq!(
             to_board_col_major_move(8, 8),

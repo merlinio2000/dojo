@@ -1,9 +1,9 @@
 use std::hint::black_box;
 
-use ultimate_tic_tac_toe::tree::Tree;
+use ultimate_tic_tac_toe::tree::TreePlayer1;
 
 fn main() {
-    let mut mcts_tree = Tree::new();
+    let mut mcts_tree = TreePlayer1::new();
 
     let n = 10;
 

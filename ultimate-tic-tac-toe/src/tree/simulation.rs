@@ -127,16 +127,12 @@ impl SimulationState {
 
         if has_won {
             let winner = self.active_player.other();
-            // branchless score
-            // lost: -1 + 0*2 = -1
-            // won: -1 + 1*2 = 1
-            -1 + ((winner == inital_player) as i32 * 2)
+            if winner == inital_player { 1 } else { -1 }
         } else {
             let won_board_initial_player =
                 bitmagic::count_ones_u32(self.super_boards[inital_player as usize].get());
             let won_board_other_player =
                 bitmagic::count_ones_u32(self.super_boards[inital_player.other() as usize].get());
-            // TODO PERF: check if this branches / is optimal
             match Ord::cmp(&won_board_initial_player, &won_board_other_player) {
                 std::cmp::Ordering::Less => -1,
                 std::cmp::Ordering::Equal => 0,

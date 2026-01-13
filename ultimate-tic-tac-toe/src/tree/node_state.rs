@@ -1,7 +1,8 @@
 use crate::{
+    bitmagic,
     board::one_bit::OneBitBoard,
     consts,
-    tree::{NO_MOVE_FORCED, simulation::SimulationState},
+    tree::{MonteCarloScore, NO_MOVE_FORCED, simulation::SimulationState},
     types::{BoardState, Player},
     util::BoardMajorBitset,
 };
@@ -53,7 +54,7 @@ impl NodeState {
     pub(super) const fn forced_board(&self) -> u8 {
         self.meta_player2() as u8
     }
-    const fn active_player(&self) -> Player {
+    pub(crate) const fn active_player(&self) -> Player {
         Player::from_is_player2((self.meta_player2() >> Self::PLAYER_OFFSET_IN_META) & 0b1 != 0)
     }
 
@@ -85,6 +86,19 @@ impl NodeState {
             is_available
         } else {
             is_available_for_board
+        }
+    }
+
+    pub(crate) fn decide_draw(&self, in_favor_of: Player) -> MonteCarloScore {
+        let won_board_favored_player =
+            bitmagic::count_ones_u32(self.super_board_for_player(in_favor_of));
+        let won_board_other_player =
+            bitmagic::count_ones_u32(self.super_board_for_player(in_favor_of.other()));
+        // TODO PERF: check if this branches / is optimal
+        match Ord::cmp(&won_board_favored_player, &won_board_other_player) {
+            std::cmp::Ordering::Less => -1,
+            std::cmp::Ordering::Equal => 0,
+            std::cmp::Ordering::Greater => 1,
         }
     }
 

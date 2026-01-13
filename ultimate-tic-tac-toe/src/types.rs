@@ -8,8 +8,8 @@ pub enum CellState {
     Player2 = 0b11,
 }
 const FREE_U8: u8 = CellState::Free as u8;
-const PLAYER1_U8: u8 = CellState::Player1 as u8;
-const PLAYER2_U8: u8 = CellState::Player2 as u8;
+const CELL_PLAYER1_U8: u8 = CellState::Player1 as u8;
+const CELL_PLAYER2_U8: u8 = CellState::Player2 as u8;
 
 impl TryFrom<u8> for CellState {
     type Error = ();
@@ -18,18 +18,23 @@ impl TryFrom<u8> for CellState {
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             FREE_U8 => Ok(CellState::Free),
-            PLAYER1_U8 => Ok(CellState::Player1),
-            PLAYER2_U8 => Ok(CellState::Player2),
+            CELL_PLAYER1_U8 => Ok(CellState::Player1),
+            CELL_PLAYER2_U8 => Ok(CellState::Player2),
             _ => Err(()),
         }
     }
 }
 
+/// see [`Player`]
+pub type PlayerU8 = u8;
+pub const PLAYER1_U8: PlayerU8 = 0;
+pub const PLAYER2_U8: PlayerU8 = 1;
+/// 0 = Player1, 1 = Player2
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Player {
-    Player1 = 0b0,
-    Player2 = 0b1,
+    Player1 = PLAYER1_U8,
+    Player2 = PLAYER2_U8,
 }
 impl Player {
     // PERF: could technically be just a `| 0b10`
