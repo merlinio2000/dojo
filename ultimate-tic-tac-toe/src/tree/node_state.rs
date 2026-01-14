@@ -57,6 +57,7 @@ impl NodeScore {
 /// TODO MERBUG: is it possible to reach the same state but with a different active player?
 /// NOTE: NodeState::default() is not a valid node state and more of a placeholder
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[repr(align(32))]
 pub(super) struct NodeState {
     /// # bits[0]
     /// bitset indicating is_occupied for player 1
