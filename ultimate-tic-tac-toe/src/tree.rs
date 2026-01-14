@@ -248,7 +248,6 @@ impl<const SCORE_IN_FAVOR_OF: PlayerU8> TreeForPlayer<SCORE_IN_FAVOR_OF> {
     }
 
     fn get_or_insert_node(&mut self, previous_state: NodeState, move_: u8) -> NodeIdx {
-        let player_that_maybe_wins = previous_state.active_player();
         let (new_node_state, has_won) = previous_state.apply_move(move_);
 
         match self.lookup_without_root.entry(new_node_state) {
@@ -258,14 +257,7 @@ impl<const SCORE_IN_FAVOR_OF: PlayerU8> TreeForPlayer<SCORE_IN_FAVOR_OF> {
 
                 let (score, child_count) = if has_won {
                     // games where someone won have no children
-                    (
-                        if player_that_maybe_wins as u8 == SCORE_IN_FAVOR_OF {
-                            1
-                        } else {
-                            -1
-                        },
-                        0,
-                    )
+                    (1, 0)
                 } else {
                     let available_children = new_node_state.available_in_board_or_fallback();
                     let child_count = bitmagic::count_ones_u128(available_children.get()) as u8;
@@ -450,7 +442,16 @@ fn upper_confidence_bound(
 
 #[cfg(test)]
 mod test {
-    use crate::{consts, tree::TreePlayer1};
+
+    use itertools::Itertools;
+    use rand::seq::IndexedRandom;
+
+    use crate::{
+        board::one_bit::OneBitBoard,
+        consts,
+        tree::{NodeState, TreePlayer1},
+        types::Player,
+    };
 
     #[test]
     fn search_works_on_root() {
@@ -561,5 +562,45 @@ mod test {
             .filter(|edge| edge.child_node.is_some())
             .count();
         assert_eq!(defined_children_cnt, 1);
+    }
+
+    #[test]
+    fn must_pick_obvious_winning_move() {
+        let not_won_boards = (0..=OneBitBoard::new_full().get())
+            .map(OneBitBoard::new)
+            .filter(OneBitBoard::has_won)
+            .collect_vec();
+
+        let rand_not_won_board = || *not_won_boards.choose(&mut rand::rng()).unwrap();
+
+        let node_state = NodeState::from_boards(
+            [
+                [
+                    OneBitBoard::new_full(),
+                    OneBitBoard::new_full(),
+                    // only needs a move in cell 0 to win
+                    OneBitBoard::new(0b110),
+                    rand_not_won_board(),
+                    rand_not_won_board(),
+                    rand_not_won_board(),
+                    rand_not_won_board(),
+                    rand_not_won_board(),
+                    rand_not_won_board(),
+                ],
+                [
+                    rand_not_won_board(),
+                    rand_not_won_board(),
+                    rand_not_won_board(),
+                    rand_not_won_board(),
+                    rand_not_won_board(),
+                    rand_not_won_board(),
+                    rand_not_won_board(),
+                    rand_not_won_board(),
+                    rand_not_won_board(),
+                ],
+            ],
+            2,
+            Player::Player1,
+        );
     }
 }

@@ -155,6 +155,34 @@ impl NodeState {
             self.forced_board(),
         )
     }
+
+    #[cfg(test)]
+    pub(super) fn from_boards(
+        boards: [[OneBitBoard; 9]; 2],
+        forced_board: u8,
+        active_player: Player,
+    ) -> Self {
+        let mut result = Self { bits: [0, 0] };
+        for (player_idx, boards) in boards.into_iter().enumerate() {
+            for (board_idx, board) in boards.into_iter().enumerate() {
+                result.bits[player_idx] |=
+                    (board.get() as u128) << (board_idx * consts::N_CELLS as usize);
+                if board.has_won() {
+                    result.bits[player_idx] |=
+                        1 << (Self::META_OFFSET + Self::SUPER_BOARD_OFFSET_IN_META);
+                }
+            }
+        }
+        result.bits[Player::Player2 as usize] |=
+            ((active_player as u128) << Self::PLAYER_OFFSET_IN_META | forced_board as u128)
+                << Self::META_OFFSET;
+        assert_eq!(
+            result.bits[Player::Player1 as usize] & result.bits[Player::Player2 as usize],
+            0
+        );
+
+        result
+    }
 }
 
 #[cfg(test)]

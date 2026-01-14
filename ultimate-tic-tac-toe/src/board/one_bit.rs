@@ -10,6 +10,10 @@ impl OneBitBoard {
     pub const fn new(state: BoardState) -> Self {
         OneBitBoard(state & Self::MASK)
     }
+    #[cfg(test)]
+    pub const fn new_full() -> Self {
+        OneBitBoard(Self::MASK)
+    }
     pub fn has_won(&self) -> bool {
         // TODO MERBUG: clippy heuristic for manual_contains is incorrect, maybe open a PR/bug
         // report
