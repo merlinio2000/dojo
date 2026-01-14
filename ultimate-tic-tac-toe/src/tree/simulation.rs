@@ -2,7 +2,7 @@ use crate::{
     bitmagic,
     board::one_bit::OneBitBoard,
     consts, rng,
-    tree::{MonteCarloScore, NO_MOVE_FORCED},
+    tree::{MonteCarloScore, NodeState},
     types::Player,
     util::BoardMajorBitset,
 };
@@ -85,7 +85,7 @@ impl SimulationState {
 
         let forced_board = self.forced_board;
 
-        if forced_board == NO_MOVE_FORCED {
+        if forced_board == NodeState::NO_MOVE_FORCED {
             return is_available;
         }
 

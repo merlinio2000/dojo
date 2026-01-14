@@ -1,8 +1,7 @@
 use std::mem::MaybeUninit;
 
 use crate::{
-    bitmagic::{self},
-    consts,
+    bitmagic, consts,
     types::{BoardState, Index},
 };
 

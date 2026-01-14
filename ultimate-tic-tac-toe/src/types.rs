@@ -64,6 +64,8 @@ impl Player {
     }
 }
 
+pub type MonteCarloScore = i32;
+
 pub type Score = i64;
 
 pub type Index = u32;

@@ -7,20 +7,15 @@ use std::{
 };
 
 use crate::{
-    bitmagic,
-    consts::{self},
-    rng,
+    bitmagic, consts, rng,
     tree::node_state::NodeState,
-    types::{PLAYER1_U8, PLAYER2_U8, Player, PlayerU8},
+    types::{MonteCarloScore, PLAYER1_U8, PLAYER2_U8, Player, PlayerU8},
 };
 
 mod node_state;
 mod simulation;
 
 type NodeIdx = u32;
-
-type MonteCarloScore = i32;
-const NO_MOVE_FORCED: u8 = 9;
 
 /// NOTE: Node::default() is not a valid node and more of a placeholder
 #[derive(Debug, Clone, Copy, Default)]

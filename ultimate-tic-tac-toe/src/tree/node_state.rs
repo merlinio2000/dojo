@@ -2,7 +2,7 @@ use crate::{
     bitmagic,
     board::one_bit::OneBitBoard,
     consts,
-    tree::{MonteCarloScore, NO_MOVE_FORCED, simulation::SimulationState},
+    tree::{MonteCarloScore, simulation::SimulationState},
     types::{BoardState, Player},
     util::BoardMajorBitset,
 };
@@ -76,6 +76,7 @@ pub(super) struct NodeState {
 }
 
 impl NodeState {
+    pub const NO_MOVE_FORCED: u8 = 9;
     const META_OFFSET: u8 = (128 - 32);
     const SCORE_OFFSET_IN_META: u8 = 8;
     const PLAYER_OFFSET_IN_META: u8 = 16;
@@ -85,7 +86,7 @@ impl NodeState {
     const META_BITS_TO_CLEAR: u32 = 0b1_1111_1111_1111_1111;
     pub(super) const fn empty() -> Self {
         Self {
-            bits: [0, (NO_MOVE_FORCED as u128) << Self::META_OFFSET],
+            bits: [0, (Self::NO_MOVE_FORCED as u128) << Self::META_OFFSET],
         }
     }
     pub(super) const fn player1_occupied(&self) -> BoardMajorBitset {
@@ -104,7 +105,7 @@ impl NodeState {
     }
     pub(super) const fn forced_board(&self) -> u8 {
         let forced_board = self.meta_player2() as u8;
-        debug_assert!(forced_board <= NO_MOVE_FORCED);
+        debug_assert!(forced_board <= Self::NO_MOVE_FORCED);
         forced_board
     }
     pub(crate) const fn active_player(&self) -> Player {
@@ -134,7 +135,7 @@ impl NodeState {
 
         let forced_board = self.forced_board();
 
-        if forced_board == NO_MOVE_FORCED {
+        if forced_board == Self::NO_MOVE_FORCED {
             return is_available;
         }
 

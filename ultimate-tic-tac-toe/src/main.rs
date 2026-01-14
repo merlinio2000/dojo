@@ -1,6 +1,6 @@
 use std::{
     io::BufRead,
-    sync::mpsc::{self},
+    sync::mpsc,
     thread,
     time::{Duration, Instant},
 };
