@@ -469,7 +469,7 @@ mod test {
         // with 8 possible moves
         tree.search_n(consts::N_CELLS as usize - 1);
         let root = &tree.nodes[tree.root as usize];
-        assert_eq!(root.visits, consts::N_CELLS);
+        assert_eq!(root.visits, consts::N_CELLS as u32);
         let edges = &tree.edges
             [root.first_edge as usize..(root.first_edge as usize + root.child_count as usize)];
         assert_eq!(edges.len(), consts::N_CELLS as usize - 1);

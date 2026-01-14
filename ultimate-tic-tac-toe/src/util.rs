@@ -42,30 +42,30 @@ pub const fn repeat_bitpattern(pattern: u32, width: NonZeroU8, n: NonZeroU8) -> 
 
 /// see [`BoardMajorBitset`] for the layout
 pub fn to_board_col_major_move(row: u8, col: u8) -> u8 {
-    let board_idx_row = row / consts::ROWS as u8;
-    let row_in_board = row % consts::ROWS as u8;
-    let board_idx_col = col / consts::COLS as u8;
-    let col_in_board = col % consts::COLS as u8;
+    let board_idx_row = row / consts::ROWS;
+    let row_in_board = row % consts::ROWS;
+    let board_idx_col = col / consts::COLS;
+    let col_in_board = col % consts::COLS;
 
-    let board_idx = board_idx_row + consts::COLS as u8 * board_idx_col;
-    let idx_in_board = row_in_board + consts::COLS as u8 * col_in_board;
+    let board_idx = board_idx_row + consts::COLS * board_idx_col;
+    let idx_in_board = row_in_board + consts::COLS * col_in_board;
 
-    board_idx * consts::N_CELLS as u8 + idx_in_board
+    board_idx * consts::N_CELLS + idx_in_board
 }
 ///
 /// see [`BoardMajorBitset`] for the layout
 pub fn board_col_major_move_to_2d(board_col_major_move: u8) -> (u8, u8) {
-    let board_idx = board_col_major_move / consts::N_BOARDS as u8;
-    let idx_in_board = board_col_major_move % consts::N_BOARDS as u8;
+    let board_idx = board_col_major_move / consts::N_BOARDS;
+    let idx_in_board = board_col_major_move % consts::N_BOARDS;
 
-    let board_row = board_idx % consts::ROWS as u8;
-    let board_col = board_idx / consts::COLS as u8;
+    let board_row = board_idx % consts::ROWS;
+    let board_col = board_idx / consts::COLS;
 
-    let row_in_board = idx_in_board % consts::ROWS as u8;
-    let col_in_board = idx_in_board / consts::COLS as u8;
+    let row_in_board = idx_in_board % consts::ROWS;
+    let col_in_board = idx_in_board / consts::COLS;
 
-    let row = board_row * consts::ROWS as u8 + row_in_board;
-    let col = board_col * consts::COLS as u8 + col_in_board;
+    let row = board_row * consts::ROWS + row_in_board;
+    let col = board_col * consts::COLS + col_in_board;
     (row, col)
 }
 
@@ -93,9 +93,11 @@ pub struct BoardMajorBitset(u128);
 
 impl BoardMajorBitset {
     const BOARD_FULL_MASK: u128 = 0b1_1111_1111;
-    const BITS: u32 = consts::N_CELLS * consts::N_CELLS;
-    const GRID_MASK: u128 = 2u128.pow(Self::BITS) - 1;
+    const BITS: u8 = consts::N_CELLS * consts::N_CELLS;
+    const GRID_MASK: u128 = 2u128.pow(Self::BITS as u32) - 1;
 
+    /// # Safety
+    /// bits above/more significant than bit 80 must be 0
     pub const unsafe fn new_unchecked(board_col_major_indices: u128) -> Self {
         debug_assert!(board_col_major_indices >> Self::BITS == 0);
         Self(board_col_major_indices)
@@ -105,8 +107,8 @@ impl BoardMajorBitset {
         Self(board_col_major_indices & Self::GRID_MASK)
     }
     pub const fn new_full_board(board_idx: u8) -> Self {
-        debug_assert!(board_idx < consts::N_CELLS as u8, "board idx out of range");
-        Self(BoardMajorBitset::BOARD_FULL_MASK << (board_idx * consts::N_CELLS as u8))
+        debug_assert!(board_idx < consts::N_CELLS, "board idx out of range");
+        Self(BoardMajorBitset::BOARD_FULL_MASK << (board_idx * consts::N_CELLS))
     }
 
     pub const fn get(&self) -> u128 {
@@ -118,13 +120,13 @@ impl BoardMajorBitset {
     }
 
     pub const fn fill_board(&mut self, board_idx: u8) {
-        debug_assert!(board_idx < consts::N_CELLS as u8);
-        let board_full_mask = Self::BOARD_FULL_MASK << (board_idx * consts::N_CELLS as u8);
+        debug_assert!(board_idx < consts::N_CELLS);
+        let board_full_mask = Self::BOARD_FULL_MASK << (board_idx * consts::N_CELLS);
         self.0 |= board_full_mask;
     }
     pub const fn is_board_full(&self, board_idx: u8) -> bool {
-        debug_assert!(board_idx < consts::N_CELLS as u8);
-        let board_full_mask = Self::BOARD_FULL_MASK << (board_idx * consts::N_CELLS as u8);
+        debug_assert!(board_idx < consts::N_CELLS);
+        let board_full_mask = Self::BOARD_FULL_MASK << (board_idx * consts::N_CELLS);
         self.0 & board_full_mask == board_full_mask
     }
     pub const fn apply_move(&mut self, move_: u8) {
@@ -132,8 +134,8 @@ impl BoardMajorBitset {
     }
 
     pub const fn get_sub_board(&self, board_idx: u8) -> OneBitBoard {
-        debug_assert!(board_idx < consts::N_CELLS as u8);
-        OneBitBoard::new((self.0 >> (board_idx as u32 * consts::N_CELLS)) as BoardState)
+        debug_assert!(board_idx < consts::N_CELLS);
+        OneBitBoard::new((self.0 >> (board_idx * consts::N_CELLS)) as BoardState)
     }
 
     pub const fn unset_least_signifiact_one(&mut self) {
@@ -194,25 +196,13 @@ mod test {
         assert_eq!(board_col_major_move_to_2d(12), (3, 1));
         assert_eq!(board_col_major_move_to_2d(13), (4, 1));
 
-        assert_eq!(
-            board_col_major_move_to_2d(3 * consts::N_CELLS as u8),
-            (0, 3)
-        );
-        assert_eq!(
-            board_col_major_move_to_2d(3 * consts::N_CELLS as u8 + 1),
-            (1, 3)
-        );
-        assert_eq!(
-            board_col_major_move_to_2d(3 * consts::N_CELLS as u8 + 3),
-            (0, 4)
-        );
-        assert_eq!(
-            board_col_major_move_to_2d(4 * consts::N_CELLS as u8),
-            (3, 3)
-        );
+        assert_eq!(board_col_major_move_to_2d(3 * consts::N_CELLS), (0, 3));
+        assert_eq!(board_col_major_move_to_2d(3 * consts::N_CELLS + 1), (1, 3));
+        assert_eq!(board_col_major_move_to_2d(3 * consts::N_CELLS + 3), (0, 4));
+        assert_eq!(board_col_major_move_to_2d(4 * consts::N_CELLS), (3, 3));
 
         assert_eq!(
-            board_col_major_move_to_2d(consts::N_CELLS_NESTED as u8 - 1),
+            board_col_major_move_to_2d(consts::N_CELLS_NESTED - 1),
             (8, 8)
         );
     }
@@ -235,16 +225,13 @@ mod test {
         assert_eq!(to_board_col_major_move(3, 1), 12);
         assert_eq!(to_board_col_major_move(4, 1), 13);
 
-        assert_eq!(to_board_col_major_move(0, 3), 3 * consts::N_CELLS as u8);
-        assert_eq!(to_board_col_major_move(1, 3), 3 * consts::N_CELLS as u8 + 1);
-        assert_eq!(to_board_col_major_move(0, 4), 3 * consts::N_CELLS as u8 + 3);
-        assert_eq!(to_board_col_major_move(3, 3), 4 * consts::N_CELLS as u8);
+        assert_eq!(to_board_col_major_move(0, 3), 3 * consts::N_CELLS);
+        assert_eq!(to_board_col_major_move(1, 3), 3 * consts::N_CELLS + 1);
+        assert_eq!(to_board_col_major_move(0, 4), 3 * consts::N_CELLS + 3);
+        assert_eq!(to_board_col_major_move(3, 3), 4 * consts::N_CELLS);
 
         assert_eq!(to_board_col_major_move(8, 7), 80 - 3);
 
-        assert_eq!(
-            to_board_col_major_move(8, 8),
-            consts::N_CELLS_NESTED as u8 - 1,
-        );
+        assert_eq!(to_board_col_major_move(8, 8), consts::N_CELLS_NESTED - 1,);
     }
 }
