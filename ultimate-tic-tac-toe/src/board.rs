@@ -58,7 +58,7 @@ impl Board {
         LOOKUP_1D_TO_2D[one_d_idx as usize]
     }
     /// col major
-    pub(crate) fn get_1d(&self, idx: Index) -> CellState {
+    pub fn get_1d(&self, idx: Index) -> CellState {
         let bits = ((self.0 >> (consts::CELL_BITS * idx as usize)) & 0b11) as u8;
         CellState::try_from(bits).expect("invalid bits for CellState")
     }
@@ -72,16 +72,16 @@ impl Board {
         self.0 & consts::ALL_CELLS_OCCUPIED_MASK == consts::ALL_CELLS_OCCUPIED_MASK
     }
     /// col-major
-    pub(crate) fn is_available_1d(&self, idx: Index) -> bool {
+    pub fn is_available_1d(&self, idx: Index) -> bool {
         let mask = 0b10 << (consts::CELL_BITS * idx as usize);
         self.0 & mask == 0
     }
     #[expect(unused)]
-    pub(crate) fn is_available(&self, row: Index, col: Index) -> bool {
+    pub fn is_available(&self, row: Index, col: Index) -> bool {
         self.is_available_1d(Self::to_1d_idx(row, col))
     }
     /// col major
-    pub(crate) fn set_1d(&mut self, idx: Index, player: Player) {
+    pub fn set_1d(&mut self, idx: Index, player: Player) {
         debug_assert_eq!(self.get_1d(idx), CellState::Free);
         let new_cell_state = player.cell_state();
         self.0 |= (new_cell_state as BoardState) << (consts::CELL_BITS * idx as usize);

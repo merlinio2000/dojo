@@ -68,8 +68,8 @@ pub const ALL_CELLS_OCCUPIED_MASK: BoardState = 0b10__1010_1010_1010_1010;
 pub const MASK_COL: BoardState = 0b0011_1111;
 pub const MASKS_COL: [BoardState; COLS as usize] = build_3_col_shifted_masks::<CELL_BITS>(MASK_COL);
 //                                             210
-pub(crate) const MASK_COL_1BIT: BoardState = 0b111;
-pub(crate) const MASKS_COL_1BIT: [BoardState; COLS as usize] =
+pub const MASK_COL_1BIT: BoardState = 0b111;
+pub const MASKS_COL_1BIT: [BoardState; COLS as usize] =
     build_3_col_shifted_masks::<1>(MASK_COL_1BIT);
 
 //                                                   2  1 0

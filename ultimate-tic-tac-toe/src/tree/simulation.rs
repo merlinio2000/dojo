@@ -8,7 +8,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct SimulationState {
+pub struct SimulationState {
     player_boards: [BoardMajorBitset; 2],
     /// contains information on who won which sub-board
     super_boards: [OneBitBoard; 2],
@@ -17,7 +17,7 @@ pub(super) struct SimulationState {
 }
 
 impl SimulationState {
-    pub(super) const fn new(
+    pub const fn new(
         player_boards: [BoardMajorBitset; 2],
         super_boards: [OneBitBoard; 2],
         active_player: Player,
@@ -47,7 +47,7 @@ impl SimulationState {
     /// # Returns
     /// - new node state with move applied (and board bits won if board was won)
     /// - true if the active player won using this move
-    pub(super) fn apply_move(self, board_col_major_idx: u8) -> (Self, bool) {
+    pub fn apply_move(self, board_col_major_idx: u8) -> (Self, bool) {
         let mut child_state = self;
         let player = self.active_player;
 
@@ -78,7 +78,7 @@ impl SimulationState {
         (child_state, won_game)
     }
 
-    pub(super) fn available_in_board_or_fallback(&self) -> BoardMajorBitset {
+    pub fn available_in_board_or_fallback(&self) -> BoardMajorBitset {
         // TODO PERF: this code has an unnecessary '& GRID_MASK', check the asm
         let is_occupied = self.player1_occupied() | self.player2_occupied();
         let is_available = !is_occupied;
@@ -120,7 +120,7 @@ impl SimulationState {
     /// -  1 if the initially active player loses (favored wins)
     /// -  0 for a draw
     /// - -1 if the initally active player wins (favored loses)
-    pub(super) fn simulate_random(mut self) -> MonteCarloScore {
+    pub fn simulate_random(mut self) -> MonteCarloScore {
         debug_assert!(!self.super_boards[0].has_won());
         debug_assert!(!self.super_boards[1].has_won());
         let mut has_won = false;

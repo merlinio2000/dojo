@@ -6,7 +6,7 @@ use crate::{
     types::BoardState,
 };
 
-pub(crate) const fn const_concat<const A: usize, const B: usize, const C: usize>(
+pub const fn const_concat<const A: usize, const B: usize, const C: usize>(
     a: [u32; A],
     b: [u32; B],
 ) -> [u32; C] {
@@ -24,7 +24,7 @@ pub(crate) const fn const_concat<const A: usize, const B: usize, const C: usize>
     both
 }
 
-pub(crate) const fn repeat_bitpattern(pattern: u32, width: NonZeroU8, n: NonZeroU8) -> u128 {
+pub const fn repeat_bitpattern(pattern: u32, width: NonZeroU8, n: NonZeroU8) -> u128 {
     debug_assert!(
         pattern.leading_zeros() as usize >= size_of::<u32>() - width.get() as usize,
         "bits higher than the width of the pattern appear to be set"
@@ -89,7 +89,7 @@ pub fn board_col_major_move_to_2d(board_col_major_move: u8) -> (u8, u8) {
 /// | 20 | 23 | 26 | 47 | 50 | 53 | 74 | 77 | 80 |
 /// +----+----+----+----+----+----+----+----+----+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub(crate) struct BoardMajorBitset(u128);
+pub struct BoardMajorBitset(u128);
 
 impl BoardMajorBitset {
     const BOARD_FULL_MASK: u128 = 0b1_1111_1111;

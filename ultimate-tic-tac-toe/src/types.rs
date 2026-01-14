@@ -54,7 +54,7 @@ impl Player {
         }
     }
 
-    pub(crate) const fn from_is_player2(is_player2: bool) -> Self {
+    pub const fn from_is_player2(is_player2: bool) -> Self {
         // TODO PERF check that this is the identity function
         if is_player2 {
             Self::Player2

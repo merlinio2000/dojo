@@ -58,7 +58,7 @@ impl NodeScore {
 /// NOTE: NodeState::default() is not a valid node state and more of a placeholder
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[repr(align(32))]
-pub(super) struct NodeState {
+pub struct NodeState {
     /// # bits[0]
     /// bitset indicating is_occupied for player 1
     /// upper 32 bits are reserved for meta data
@@ -84,15 +84,15 @@ impl NodeState {
     /// `node_score` is not cleared on purpose as it is only changed from a `0b00` value exactly once
     ///                       player -|   forced_board -|:|
     const META_BITS_TO_CLEAR: u32 = 0b1_1111_1111_1111_1111;
-    pub(super) const fn empty() -> Self {
+    pub const fn empty() -> Self {
         Self {
             bits: [0, (Self::NO_MOVE_FORCED as u128) << Self::META_OFFSET],
         }
     }
-    pub(super) const fn player1_occupied(&self) -> BoardMajorBitset {
+    pub const fn player1_occupied(&self) -> BoardMajorBitset {
         BoardMajorBitset::new_truncated(self.bits[0])
     }
-    pub(super) const fn player2_occupied(&self) -> BoardMajorBitset {
+    pub const fn player2_occupied(&self) -> BoardMajorBitset {
         BoardMajorBitset::new_truncated(self.bits[1])
     }
 
@@ -103,32 +103,32 @@ impl NodeState {
     const fn meta_player2(&self) -> u32 {
         self.meta_player(Player::Player2)
     }
-    pub(super) const fn forced_board(&self) -> u8 {
+    pub const fn forced_board(&self) -> u8 {
         let forced_board = self.meta_player2() as u8;
         debug_assert!(forced_board <= Self::NO_MOVE_FORCED);
         forced_board
     }
-    pub(crate) const fn active_player(&self) -> Player {
+    pub const fn active_player(&self) -> Player {
         Player::from_is_player2((self.meta_player2() >> Self::PLAYER_OFFSET_IN_META) & 0b1 != 0)
     }
 
-    pub(crate) const fn node_score_favoring_previous_player(&self) -> NodeScore {
+    pub const fn node_score_favoring_previous_player(&self) -> NodeScore {
         // safety: we fully controll the bits set here and this is always guaranteed to be valid
         unsafe {
             NodeScore::from_u8_unchecked((self.meta_player2() >> Self::SCORE_OFFSET_IN_META) as u8)
         }
     }
 
-    pub(super) const fn super_board_for_player(&self, player: Player) -> BoardState {
+    pub const fn super_board_for_player(&self, player: Player) -> BoardState {
         self.meta_player(player) >> Self::SUPER_BOARD_OFFSET_IN_META
     }
 
-    pub(super) const fn get_player_board(&self, player: Player, board_idx: u8) -> OneBitBoard {
+    pub const fn get_player_board(&self, player: Player, board_idx: u8) -> OneBitBoard {
         OneBitBoard::new(
             (self.bits[player as usize] >> (board_idx * consts::N_CELLS as u8)) as BoardState,
         )
     }
-    pub(super) fn available_in_board_or_fallback(&self) -> BoardMajorBitset {
+    pub fn available_in_board_or_fallback(&self) -> BoardMajorBitset {
         // TODO PERF: this code has an unnecessary '& GRID_MASK', check the asm
         let is_occupied = self.player1_occupied() | self.player2_occupied();
         let is_available = !is_occupied;
@@ -174,7 +174,7 @@ impl NodeState {
     /// # Returns
     /// - new node state with move applied (and board bits won if board was won)
     /// - the amount of children the new node has (notably 0 if it is a terminal node)
-    pub(super) fn apply_move(&self, board_col_major_idx: u8) -> (NodeState, u8, NodeScore) {
+    pub fn apply_move(&self, board_col_major_idx: u8) -> (NodeState, u8, NodeScore) {
         let mut child_state = *self;
         let favored_player = self.active_player();
 
@@ -226,7 +226,7 @@ impl NodeState {
         (child_state, child_count, score)
     }
 
-    pub(super) fn into_simulation(self) -> SimulationState {
+    pub fn into_simulation(self) -> SimulationState {
         SimulationState::new(
             self.bits.map(BoardMajorBitset::new_truncated),
             [Player::Player1, Player::Player2]
@@ -237,7 +237,7 @@ impl NodeState {
     }
 
     #[cfg(test)]
-    pub(super) fn from_boards(
+    pub fn from_boards(
         player_boards: [[OneBitBoard; 9]; 2],
         forced_board: u8,
         active_player: Player,

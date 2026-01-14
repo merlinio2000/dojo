@@ -1,6 +1,6 @@
 use crate::{board::move_iter::BoardMoveIterU128, consts, util::BoardMajorBitset};
 
-pub(crate) const fn trailing_zeros(bits: u32) -> u32 {
+pub const fn trailing_zeros(bits: u32) -> u32 {
     // safety: this may only be run on modern x86 cpus, main asserts feature is available
     #[cfg(target_arch = "x86_64")]
     unsafe {
@@ -24,7 +24,7 @@ const fn trailing_zeros_fallback(bits: u32) -> u32 {
     bits.trailing_zeros()
 }
 
-pub(crate) const fn trailing_zeros_u128(bits: u128) -> u32 {
+pub const fn trailing_zeros_u128(bits: u128) -> u32 {
     // safety: this may only be run on modern x86 cpus, main asserts feature is available
     #[cfg(target_arch = "x86_64")]
     unsafe {
@@ -81,7 +81,7 @@ fn get_availble_bits_contiguous_fallback(board_state: u32) -> u32 {
 
 // 'compress' the board layout so we only have every second bit (= !is_available) left
 //  and placed contiguously at the start of the result
-pub(crate) fn get_availble_bits_contiguous(board_state: u32) -> u32 {
+pub fn get_availble_bits_contiguous(board_state: u32) -> u32 {
     // safety: this may only be run on modern x86 cpus, main asserts feature is available
     #[cfg(target_arch = "x86_64")]
     unsafe {
@@ -91,7 +91,7 @@ pub(crate) fn get_availble_bits_contiguous(board_state: u32) -> u32 {
     get_availble_bits_contiguous_fallback(board_state)
 }
 
-pub(crate) const fn count_ones_u128(bits: u128) -> u32 {
+pub const fn count_ones_u128(bits: u128) -> u32 {
     // safety: this may only be run on modern x86 cpus, main asserts feature is available
     #[cfg(target_arch = "x86_64")]
     unsafe {
@@ -106,7 +106,7 @@ const fn count_ones_u128_x86_popcnt(bits: u128) -> u32 {
     bits.count_ones()
 }
 
-pub(crate) const fn count_ones_u32(bits: u32) -> u32 {
+pub const fn count_ones_u32(bits: u32) -> u32 {
     // safety: this may only be run on modern x86 cpus, main asserts feature is available
     #[cfg(target_arch = "x86_64")]
     unsafe {
