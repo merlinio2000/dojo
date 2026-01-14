@@ -7,6 +7,53 @@ use crate::{
     util::BoardMajorBitset,
 };
 
+const NODE_SCORE_INDETERMINATE: u8 = 0;
+const NODE_SCORE_LOSS: u8 = 1;
+const NODE_SCORE_DRAW: u8 = 2;
+const NODE_SCORE_WIN: u8 = 3;
+
+/// from the perspective of the person that applied the move leading to this node
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(u8)]
+pub enum NodeScore {
+    #[default]
+    Indeterminate = NODE_SCORE_INDETERMINATE,
+    Loss = NODE_SCORE_LOSS,
+    Draw = NODE_SCORE_DRAW,
+    Win = NODE_SCORE_WIN,
+}
+
+impl NodeScore {
+    /// # Safety:
+    /// `score` must be a valid value of [`NodeScore`]
+    pub const unsafe fn from_u8_unchecked(score: u8) -> Self {
+        match score {
+            NODE_SCORE_INDETERMINATE => NodeScore::Indeterminate,
+            NODE_SCORE_LOSS => NodeScore::Loss,
+            NODE_SCORE_DRAW => NodeScore::Draw,
+            NODE_SCORE_WIN => NodeScore::Win,
+            #[allow(unused_unsafe, reason = "only unsafe in release mode")]
+            _ => unsafe {
+                #[cfg(debug_assertions)]
+                {
+                    panic!("not a valid NodeScore");
+                }
+                #[cfg(not(debug_assertions))]
+                std::hint::unreachable_unchecked();
+            },
+        }
+    }
+
+    pub const fn as_monte_carlo_score(&self) -> MonteCarloScore {
+        match *self {
+            NodeScore::Indeterminate => 0,
+            NodeScore::Loss => -1,
+            NodeScore::Draw => 0,
+            NodeScore::Win => 1,
+        }
+    }
+}
+
 /// TODO MERBUG: is it possible to reach the same state but with a different active player?
 /// NOTE: NodeState::default() is not a valid node state and more of a placeholder
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -21,6 +68,7 @@ pub(super) struct NodeState {
     /// upper 32 bits are reserved for meta data
     /// MSB(127) = 0 -> no move forced
     /// [99:96] = forced board idx (9 = no forced board)
+    /// [105:104] = node score
     /// [112:112] = active player as u8, see [`Player`]
     /// [127:119] = "super board" / board containing is_won for subboards for player 2
     bits: [u128; 2],
@@ -28,9 +76,11 @@ pub(super) struct NodeState {
 
 impl NodeState {
     const META_OFFSET: u8 = (128 - 32);
+    const SCORE_OFFSET_IN_META: u8 = 8;
     const PLAYER_OFFSET_IN_META: u8 = 16;
     const SUPER_BOARD_OFFSET_IN_META: u8 = 32 - consts::N_BOARDS as u8;
-    //                        player -|   forced_board -|:|
+    /// `node_score` is not cleared on purpose as it is only changed from a `0b00` value exactly once
+    ///                       player -|   forced_board -|:|
     const META_BITS_TO_CLEAR: u32 = 0b1_1111_1111_1111_1111;
     pub(super) const fn empty() -> Self {
         Self {
@@ -52,10 +102,19 @@ impl NodeState {
         self.meta_player(Player::Player2)
     }
     pub(super) const fn forced_board(&self) -> u8 {
-        self.meta_player2() as u8
+        let forced_board = self.meta_player2() as u8;
+        debug_assert!(forced_board <= NO_MOVE_FORCED);
+        forced_board
     }
     pub(crate) const fn active_player(&self) -> Player {
         Player::from_is_player2((self.meta_player2() >> Self::PLAYER_OFFSET_IN_META) & 0b1 != 0)
+    }
+
+    pub(crate) const fn node_score_favoring_previous_player(&self) -> NodeScore {
+        // safety: we fully controll the bits set here and this is always guaranteed to be valid
+        unsafe {
+            NodeScore::from_u8_unchecked((self.meta_player2() >> Self::SCORE_OFFSET_IN_META) as u8)
+        }
     }
 
     pub(super) const fn super_board_for_player(&self, player: Player) -> BoardState {
@@ -89,16 +148,18 @@ impl NodeState {
         }
     }
 
-    pub(crate) fn decide_draw(&self, in_favor_of: Player) -> MonteCarloScore {
-        let won_board_favored_player =
+    const fn decide_draw(&self, in_favor_of: Player) -> NodeScore {
+        let won_boards_favored_player =
             bitmagic::count_ones_u32(self.super_board_for_player(in_favor_of));
-        let won_board_other_player =
+        let won_boards_other_player =
             bitmagic::count_ones_u32(self.super_board_for_player(in_favor_of.other()));
         // TODO PERF: check if this branches / is optimal
-        match Ord::cmp(&won_board_favored_player, &won_board_other_player) {
-            std::cmp::Ordering::Less => -1,
-            std::cmp::Ordering::Equal => 0,
-            std::cmp::Ordering::Greater => 1,
+        if won_boards_favored_player > won_boards_other_player {
+            NodeScore::Loss
+        } else if won_boards_favored_player == won_boards_other_player {
+            NodeScore::Draw
+        } else {
+            NodeScore::Win
         }
     }
 
@@ -110,25 +171,28 @@ impl NodeState {
     /// Applys a move and correctly changes the metadata, active player and won boards
     /// # Returns
     /// - new node state with move applied (and board bits won if board was won)
-    /// - true if the active player won using this move
-    pub(super) fn apply_move(&self, board_col_major_idx: u8) -> (NodeState, bool) {
+    /// - the amount of children the new node has (notably 0 if it is a terminal node)
+    pub(super) fn apply_move(&self, board_col_major_idx: u8) -> (NodeState, u8, NodeScore) {
         let mut child_state = *self;
-        let player = self.active_player();
+        let favored_player = self.active_player();
 
         let board_idx = board_col_major_idx / consts::N_CELLS as u8;
 
-        child_state.bits[player as usize] |= 0b1 << board_col_major_idx;
+        child_state.bits[favored_player as usize] |= 0b1 << board_col_major_idx;
 
-        let has_won_subboard = child_state.get_player_board(player, board_idx).has_won();
-        let new_general_meta: u32 = ((player.other() as u32) << Self::PLAYER_OFFSET_IN_META)
+        let has_won_subboard = child_state
+            .get_player_board(favored_player, board_idx)
+            .has_won();
+        let new_general_meta: u32 = ((favored_player.other() as u32)
+            << Self::PLAYER_OFFSET_IN_META)
             | (board_col_major_idx % consts::N_CELLS as u8) as u32;
 
         if has_won_subboard {
             // block all cells in that board (simpler logic for available moves)
-            child_state.bits[player as usize] |=
+            child_state.bits[favored_player as usize] |=
                 0b1_1111_1111 << (board_idx * consts::N_CELLS as u8);
             // track wins in super board (specific to each player, not in general meta)
-            child_state.bits[player as usize] |=
+            child_state.bits[favored_player as usize] |=
                 1 << (Self::META_OFFSET + Self::SUPER_BOARD_OFFSET_IN_META + board_idx);
         }
 
@@ -137,13 +201,27 @@ impl NodeState {
             !((Self::META_BITS_TO_CLEAR as u128) << Self::META_OFFSET);
         child_state.bits[Player::Player2 as usize] |=
             (new_general_meta as u128) << Self::META_OFFSET;
-        let won_game = if has_won_subboard {
-            child_state.has_won(player)
+
+        let available_in_child = child_state.available_in_board_or_fallback();
+        let score = if has_won_subboard && child_state.has_won(favored_player) {
+            NodeScore::Win
+        } else if available_in_child.is_empty() {
+            child_state.decide_draw(favored_player)
         } else {
-            false
+            NodeScore::Indeterminate
         };
 
-        (child_state, won_game)
+        // this only changes away from a zero value exactly once so doesn't need clearing
+        child_state.bits[Player::Player2 as usize] |=
+            (score as u128) << (Self::META_OFFSET + Self::SCORE_OFFSET_IN_META);
+
+        let child_count = if score == NodeScore::Indeterminate {
+            bitmagic::count_ones_u128(available_in_child.get()) as u8
+        } else {
+            0
+        };
+
+        (child_state, child_count, score)
     }
 
     pub(super) fn into_simulation(self) -> SimulationState {
@@ -158,15 +236,23 @@ impl NodeState {
 
     #[cfg(test)]
     pub(super) fn from_boards(
-        boards: [[OneBitBoard; 9]; 2],
+        player_boards: [[OneBitBoard; 9]; 2],
         forced_board: u8,
         active_player: Player,
     ) -> Self {
         let mut result = Self { bits: [0, 0] };
-        for (player_idx, boards) in boards.into_iter().enumerate() {
+        for (player_idx, boards) in player_boards.into_iter().enumerate() {
             for (board_idx, board) in boards.into_iter().enumerate() {
+                use crate::types::{PLAYER1_U8, PLAYER2_U8};
+
                 result.bits[player_idx] |=
                     (board.get() as u128) << (board_idx * consts::N_CELLS as usize);
+                if player_idx as u8 == PLAYER1_U8 {
+                    assert_eq!(
+                        player_boards[PLAYER2_U8 as usize][board_idx].get() & board.get(),
+                        0
+                    );
+                }
                 if board.has_won() {
                     result.bits[player_idx] |=
                         1 << (Self::META_OFFSET + Self::SUPER_BOARD_OFFSET_IN_META);
@@ -177,7 +263,8 @@ impl NodeState {
             ((active_player as u128) << Self::PLAYER_OFFSET_IN_META | forced_board as u128)
                 << Self::META_OFFSET;
         assert_eq!(
-            result.bits[Player::Player1 as usize] & result.bits[Player::Player2 as usize],
+            result.bits[Player::Player1 as usize] >> Self::META_OFFSET
+                & result.bits[Player::Player2 as usize] >> Self::META_OFFSET,
             0
         );
 
@@ -194,15 +281,15 @@ mod test {
         // ignore that this test disregards rules, we want to reach a sub board win as quickly as
         // possible
         let state = NodeState::empty();
-        let (state, won) = state.apply_move(0);
-        assert!(!won);
+        let (state, child_count, ..) = state.apply_move(0);
+        assert_ne!(child_count, 0);
         assert_eq!(state.player1_occupied().get(), 0b1);
         assert_eq!(state.player2_occupied().get(), 0b0);
         assert_eq!(state.forced_board(), 0);
         assert_eq!(state.available_in_board_or_fallback().get(), 0b1_1111_1110);
 
-        let (state, won) = state.apply_move(4);
-        assert!(!won);
+        let (state, child_count, ..) = state.apply_move(4);
+        assert_ne!(child_count, 0);
         assert_eq!(state.player1_occupied().get(), 0b0_0001);
         assert_eq!(state.player2_occupied().get(), 0b1_0000);
         assert_eq!(state.forced_board(), 4);
@@ -211,8 +298,8 @@ mod test {
             0b1_1111_1111 << (state.forced_board() * consts::N_CELLS as u8)
         );
 
-        let (state, won) = state.apply_move(1);
-        assert!(!won);
+        let (state, child_count, ..) = state.apply_move(1);
+        assert_ne!(child_count, 0);
         assert_eq!(state.player1_occupied().get(), 0b0_0011);
         assert_eq!(state.player2_occupied().get(), 0b1_0000);
         assert_eq!(state.forced_board(), 1);
@@ -222,8 +309,9 @@ mod test {
         );
 
         let cell_idx = 3 * consts::N_CELLS as u8 + 4;
-        let (state, won) = state.apply_move(cell_idx);
-        assert!(!won);
+        let (state, child_count, ..) = state.apply_move(cell_idx);
+        assert_ne!(child_count, 0);
+
         assert_eq!(state.player1_occupied().get(), 0b0_0011);
         assert_eq!(state.player2_occupied().get(), 0b1_0000 | (0b1 << cell_idx));
         assert_eq!(state.forced_board(), 4);
@@ -232,8 +320,9 @@ mod test {
             0b1_1111_1111 << (state.forced_board() * consts::N_CELLS as u8)
         );
 
-        let (state, won) = state.apply_move(2);
-        assert!(!won);
+        let (state, child_count, ..) = state.apply_move(2);
+        assert_ne!(child_count, 0);
+
         assert_eq!(state.player1_occupied().get(), 0b1_1111_1111);
         assert_eq!(
             state.player2_occupied().get(),

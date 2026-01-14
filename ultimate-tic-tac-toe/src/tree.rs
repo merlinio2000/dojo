@@ -248,26 +248,12 @@ impl<const SCORE_IN_FAVOR_OF: PlayerU8> TreeForPlayer<SCORE_IN_FAVOR_OF> {
     }
 
     fn get_or_insert_node(&mut self, previous_state: NodeState, move_: u8) -> NodeIdx {
-        let (new_node_state, has_won) = previous_state.apply_move(move_);
+        let (new_node_state, child_count, score) = previous_state.apply_move(move_);
 
         match self.lookup_without_root.entry(new_node_state) {
             Entry::Occupied(occupied_entry) => *occupied_entry.get(),
             Entry::Vacant(vacant_entry) => {
                 let idx = self.nodes.len() as u32;
-
-                let (score, child_count) = if has_won {
-                    // games where someone won have no children
-                    (1, 0)
-                } else {
-                    let available_children = new_node_state.available_in_board_or_fallback();
-                    let child_count = bitmagic::count_ones_u128(available_children.get()) as u8;
-                    let score = if child_count == 0 {
-                        new_node_state.decide_draw(Player::from_is_player2(SCORE_IN_FAVOR_OF != 0))
-                    } else {
-                        0
-                    };
-                    (score, child_count)
-                };
 
                 // yes this is unnecessary for terminal nodes but it is preferable to not branch
                 // as it doesn't cost much and the vast majority of nodes are non-terminal
@@ -279,7 +265,7 @@ impl<const SCORE_IN_FAVOR_OF: PlayerU8> TreeForPlayer<SCORE_IN_FAVOR_OF> {
                 self.nodes.push(Node {
                     game_state: new_node_state,
                     visits: 0,
-                    score,
+                    score: score.as_monte_carlo_score(),
                     child_count,
                     first_edge,
                 });
@@ -380,15 +366,10 @@ impl<const SCORE_IN_FAVOR_OF: PlayerU8> TreeForPlayer<SCORE_IN_FAVOR_OF> {
             child_node.visits += 1;
             // NOTE: += intentional because the node might be re-used
             let score_delta = if child_node.child_count == 0 {
-                // don't double count score from first insertion
-                if child_node.visits == 1 {
-                    0
-                } else {
-                    // a terminal node always results in the same result
-                    // - visits * 1 / 0 / visits * -1
-                    // so this division is guaranteed to be accurate and avoids over accumulation
-                    child_node.score / child_node.visits as i32
-                }
+                child_node
+                    .game_state
+                    .node_score_favoring_previous_player()
+                    .as_monte_carlo_score()
             } else {
                 child_node.game_state.into_simulation().simulate_random()
             };
@@ -590,7 +571,7 @@ mod test {
                 [
                     rand_not_won_board(),
                     rand_not_won_board(),
-                    rand_not_won_board(),
+                    OneBitBoard::new(0b110_000),
                     rand_not_won_board(),
                     rand_not_won_board(),
                     rand_not_won_board(),

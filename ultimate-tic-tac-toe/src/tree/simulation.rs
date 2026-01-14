@@ -17,7 +17,7 @@ pub(super) struct SimulationState {
 }
 
 impl SimulationState {
-    pub(super) fn new(
+    pub(super) const fn new(
         player_boards: [BoardMajorBitset; 2],
         super_boards: [OneBitBoard; 2],
         active_player: Player,
@@ -31,10 +31,10 @@ impl SimulationState {
         }
     }
 
-    fn player1_occupied(&self) -> BoardMajorBitset {
+    const fn player1_occupied(&self) -> BoardMajorBitset {
         self.player_boards[Player::Player1 as usize]
     }
-    fn player2_occupied(&self) -> BoardMajorBitset {
+    const fn player2_occupied(&self) -> BoardMajorBitset {
         self.player_boards[Player::Player2 as usize]
     }
 
@@ -100,10 +100,26 @@ impl SimulationState {
         }
     }
 
+    const fn decide_draw(&self, in_favor_of: Player) -> MonteCarloScore {
+        let won_boards_favored_player =
+            bitmagic::count_ones_u32(self.super_boards[in_favor_of as usize].get());
+        let won_boards_other_player =
+            bitmagic::count_ones_u32(self.super_boards[in_favor_of.other() as usize].get());
+        // TODO PERF: check if this branches / is optimal
+        if won_boards_favored_player > won_boards_other_player {
+            -1
+        } else if won_boards_favored_player == won_boards_other_player {
+            0
+        } else {
+            1
+        }
+    }
+
+    /// NOTE: favors the player that player before this move
     /// # Returns
-    /// - -1 if the not initially active player wins
-    /// - 0 for a draw
-    /// - 1 if the initally active player wins
+    /// -  1 if the initially active player loses (favored wins)
+    /// -  0 for a draw
+    /// - -1 if the initally active player wins (favored loses)
     pub(super) fn simulate_random(mut self) -> MonteCarloScore {
         debug_assert!(!self.super_boards[0].has_won());
         debug_assert!(!self.super_boards[1].has_won());
@@ -126,18 +142,10 @@ impl SimulationState {
         }
 
         if has_won {
-            let winner = self.active_player.other();
-            if winner == inital_player { 1 } else { -1 }
+            let looser = self.active_player;
+            if looser == inital_player { 1 } else { -1 }
         } else {
-            let won_board_initial_player =
-                bitmagic::count_ones_u32(self.super_boards[inital_player as usize].get());
-            let won_board_other_player =
-                bitmagic::count_ones_u32(self.super_boards[inital_player.other() as usize].get());
-            match Ord::cmp(&won_board_initial_player, &won_board_other_player) {
-                std::cmp::Ordering::Less => -1,
-                std::cmp::Ordering::Equal => 0,
-                std::cmp::Ordering::Greater => 1,
-            }
+            self.decide_draw(inital_player.other())
         }
     }
 }
