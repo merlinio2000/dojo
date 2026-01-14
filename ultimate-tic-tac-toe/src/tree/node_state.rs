@@ -67,10 +67,9 @@ pub struct NodeState {
     /// # bits[1] (including meta)
     /// [80:0] = bitset indicating is_occupied for player 2
     /// upper 32 bits are reserved for meta data
-    /// MSB(127) = 0 -> no move forced
     /// [99:96] = forced board idx (9 = no forced board)
     /// [105:104] = node score
-    /// [112:112] = active player as u8, see [`Player`]
+    /// [112:112] = active player, see [`Player`]
     /// [127:119] = "super board" / board containing is_won for subboards for player 2
     bits: [u128; 2],
 }
@@ -80,8 +79,9 @@ impl NodeState {
     const META_OFFSET: u8 = (128 - 32);
     const SCORE_OFFSET_IN_META: u8 = 8;
     const PLAYER_OFFSET_IN_META: u8 = 16;
-    const SUPER_BOARD_OFFSET_IN_META: u8 = 32 - consts::N_BOARDS as u8;
-    /// `node_score` is not cleared on purpose as it is only changed from a `0b00` value exactly once
+    const SUPER_BOARD_OFFSET_IN_META: u8 = 32 - consts::N_BOARDS;
+    /// node_score is ok to be theoretically cleared as after it is set there shouldn't be any more
+    /// moves
     ///                       player -|   forced_board -|:|
     const META_BITS_TO_CLEAR: u32 = 0b1_1111_1111_1111_1111;
     pub const fn empty() -> Self {
@@ -104,9 +104,9 @@ impl NodeState {
         self.meta_player(Player::Player2)
     }
     pub const fn forced_board(&self) -> u8 {
-        let forced_board = self.meta_player2() as u8;
-        debug_assert!(forced_board <= Self::NO_MOVE_FORCED);
-        forced_board
+        let forced_board = self.meta_player2();
+        debug_assert!(forced_board as u8 <= Self::NO_MOVE_FORCED);
+        forced_board as u8
     }
     pub const fn active_player(&self) -> Player {
         Player::from_is_player2((self.meta_player2() >> Self::PLAYER_OFFSET_IN_META) & 0b1 != 0)
@@ -125,7 +125,7 @@ impl NodeState {
 
     pub const fn get_player_board(&self, player: Player, board_idx: u8) -> OneBitBoard {
         OneBitBoard::new(
-            (self.bits[player as usize] >> (board_idx * consts::N_CELLS as u8)) as BoardState,
+            (self.bits[player as usize] >> (board_idx * consts::N_CELLS)) as BoardState,
         )
     }
     pub fn available_in_board_or_fallback(&self) -> BoardMajorBitset {
@@ -175,10 +175,14 @@ impl NodeState {
     /// - new node state with move applied (and board bits won if board was won)
     /// - the amount of children the new node has (notably 0 if it is a terminal node)
     pub fn apply_move(&self, board_col_major_idx: u8) -> (NodeState, u8, NodeScore) {
+        debug_assert_eq!(
+            self.node_score_favoring_previous_player(),
+            NodeScore::Indeterminate
+        );
         let mut child_state = *self;
         let favored_player = self.active_player();
 
-        let board_idx = board_col_major_idx / consts::N_CELLS as u8;
+        let board_idx = board_col_major_idx / consts::N_CELLS;
 
         child_state.bits[favored_player as usize] |= 0b1 << board_col_major_idx;
 
@@ -187,12 +191,12 @@ impl NodeState {
             .has_won();
         let new_general_meta: u32 = ((favored_player.other() as u32)
             << Self::PLAYER_OFFSET_IN_META)
-            | (board_col_major_idx % consts::N_CELLS as u8) as u32;
+            | (board_col_major_idx % consts::N_CELLS) as u32;
 
         if has_won_subboard {
             // block all cells in that board (simpler logic for available moves)
             child_state.bits[favored_player as usize] |=
-                0b1_1111_1111 << (board_idx * consts::N_CELLS as u8);
+                0b1_1111_1111 << (board_idx * consts::N_CELLS);
             // track wins in super board (specific to each player, not in general meta)
             child_state.bits[favored_player as usize] |=
                 1 << (Self::META_OFFSET + Self::SUPER_BOARD_OFFSET_IN_META + board_idx);
@@ -213,7 +217,6 @@ impl NodeState {
             NodeScore::Indeterminate
         };
 
-        // this only changes away from a zero value exactly once so doesn't need clearing
         child_state.bits[Player::Player2 as usize] |=
             (score as u128) << (Self::META_OFFSET + Self::SCORE_OFFSET_IN_META);
 
@@ -244,6 +247,9 @@ impl NodeState {
     ) -> Self {
         let mut result = Self { bits: [0, 0] };
         for (player_idx, boards) in player_boards.into_iter().enumerate() {
+            if player_idx == 1 {
+                assert_eq!(result.super_board_for_player(Player::Player1), 0b11);
+            }
             for (board_idx, board) in boards.into_iter().enumerate() {
                 use crate::types::{PLAYER1_U8, PLAYER2_U8};
 
@@ -256,8 +262,8 @@ impl NodeState {
                     );
                 }
                 if board.has_won() {
-                    result.bits[player_idx] |=
-                        1 << (Self::META_OFFSET + Self::SUPER_BOARD_OFFSET_IN_META);
+                    result.bits[player_idx] |= 1
+                        << (Self::META_OFFSET + Self::SUPER_BOARD_OFFSET_IN_META + board_idx as u8);
                 }
             }
         }
@@ -269,6 +275,16 @@ impl NodeState {
                 & result.bits[Player::Player2 as usize] >> Self::META_OFFSET,
             0
         );
+
+        if result.has_won(active_player) {
+            panic!("can not create loss node")
+        } else if result.has_won(active_player.other()) {
+            panic!("can not create win node")
+        } else if result.available_in_board_or_fallback().is_empty() {
+            panic!("can not create terminal node")
+        }
+        result.bits[Player::Player2 as usize] |=
+            (NodeScore::Indeterminate as u128) << (Self::META_OFFSET + Self::SCORE_OFFSET_IN_META);
 
         result
     }
@@ -297,7 +313,7 @@ mod test {
         assert_eq!(state.forced_board(), 4);
         assert_eq!(
             state.available_in_board_or_fallback().get(),
-            0b1_1111_1111 << (state.forced_board() * consts::N_CELLS as u8)
+            0b1_1111_1111 << (state.forced_board() * consts::N_CELLS)
         );
 
         let (state, child_count, ..) = state.apply_move(1);
@@ -307,10 +323,10 @@ mod test {
         assert_eq!(state.forced_board(), 1);
         assert_eq!(
             state.available_in_board_or_fallback().get(),
-            0b1_1111_1111 << (state.forced_board() * consts::N_CELLS as u8)
+            0b1_1111_1111 << (state.forced_board() * consts::N_CELLS)
         );
 
-        let cell_idx = 3 * consts::N_CELLS as u8 + 4;
+        let cell_idx = 3 * consts::N_CELLS + 4;
         let (state, child_count, ..) = state.apply_move(cell_idx);
         assert_ne!(child_count, 0);
 
@@ -319,7 +335,7 @@ mod test {
         assert_eq!(state.forced_board(), 4);
         assert_eq!(
             state.available_in_board_or_fallback().get(),
-            0b1_1111_1111 << (state.forced_board() * consts::N_CELLS as u8)
+            0b1_1111_1111 << (state.forced_board() * consts::N_CELLS)
         );
 
         let (state, child_count, ..) = state.apply_move(2);
@@ -333,7 +349,66 @@ mod test {
         assert_eq!(state.forced_board(), 2);
         assert_eq!(
             state.available_in_board_or_fallback().get(),
-            0b1_1111_1111 << (state.forced_board() * consts::N_CELLS as u8)
+            0b1_1111_1111 << (state.forced_board() * consts::N_CELLS)
+        );
+    }
+
+    #[test]
+    fn test_win() {
+        // ignore that this test disregards rules, we want to reach a sub board win as quickly as
+        // possible
+        let state = NodeState::empty();
+        let (state, child_count, ..) = state.apply_move(0);
+        assert_ne!(child_count, 0);
+        assert_eq!(state.player1_occupied().get(), 0b1);
+        assert_eq!(state.player2_occupied().get(), 0b0);
+        assert_eq!(state.forced_board(), 0);
+        assert_eq!(state.available_in_board_or_fallback().get(), 0b1_1111_1110);
+
+        let (state, child_count, ..) = state.apply_move(4);
+        assert_ne!(child_count, 0);
+        assert_eq!(state.player1_occupied().get(), 0b0_0001);
+        assert_eq!(state.player2_occupied().get(), 0b1_0000);
+        assert_eq!(state.forced_board(), 4);
+        assert_eq!(
+            state.available_in_board_or_fallback().get(),
+            0b1_1111_1111 << (state.forced_board() * consts::N_CELLS)
+        );
+
+        let (state, child_count, ..) = state.apply_move(1);
+        assert_ne!(child_count, 0);
+        assert_eq!(state.player1_occupied().get(), 0b0_0011);
+        assert_eq!(state.player2_occupied().get(), 0b1_0000);
+        assert_eq!(state.forced_board(), 1);
+        assert_eq!(
+            state.available_in_board_or_fallback().get(),
+            0b1_1111_1111 << (state.forced_board() * consts::N_CELLS)
+        );
+
+        let cell_idx = 3 * consts::N_CELLS + 4;
+        let (state, child_count, ..) = state.apply_move(cell_idx);
+        assert_ne!(child_count, 0);
+
+        assert_eq!(state.player1_occupied().get(), 0b0_0011);
+        assert_eq!(state.player2_occupied().get(), 0b1_0000 | (0b1 << cell_idx));
+        assert_eq!(state.forced_board(), 4);
+        assert_eq!(
+            state.available_in_board_or_fallback().get(),
+            0b1_1111_1111 << (state.forced_board() * consts::N_CELLS)
+        );
+
+        let (state, child_count, ..) = state.apply_move(2);
+        assert_ne!(child_count, 0);
+
+        assert_eq!(state.player1_occupied().get(), 0b1_1111_1111);
+        assert_eq!(
+            state.player2_occupied().get(),
+            0b0_0001_0000 | (0b1 << cell_idx)
+        );
+        assert_eq!(state.forced_board(), 2);
+        assert_eq!(
+            state.available_in_board_or_fallback().get(),
+            0b1_1111_1111 << (state.forced_board() * consts::N_CELLS)
         );
     }
 }

@@ -56,7 +56,7 @@ impl Default for TreePlayer1 {
 }
 
 impl TreePlayer1 {
-    pub fn new() -> Self {
+    fn new_from_node(root: NodeState) -> Self {
         let nodes = Vec::with_capacity(Self::INITIAL_N_NODES);
         let edges = Vec::with_capacity(Self::INITIAL_N_NODES * Self::GUESSTIMATE_AVG_CHILDREN);
 
@@ -69,17 +69,16 @@ impl TreePlayer1 {
             lookup_without_root,
             edge_selection_buf: [0; consts::N_CELLS_NESTED as usize],
         };
-
-        this.insert_root_node();
-
+        this.insert_root_node(root);
         this
     }
-    fn insert_root_node(&mut self) -> NodeIdx {
+    pub fn new() -> Self {
+        Self::new_from_node(NodeState::empty())
+    }
+    fn insert_root_node(&mut self, node_state: NodeState) -> NodeIdx {
         debug_assert_eq!(self.nodes.len(), 0);
         debug_assert_eq!(self.edges.len(), 0);
         let idx = 0;
-
-        let node_state = NodeState::empty();
 
         let available_children = node_state.available_in_board_or_fallback();
         let child_count = bitmagic::count_ones_u128(available_children.get()) as u8;
@@ -310,12 +309,12 @@ impl<const SCORE_IN_FAVOR_OF: PlayerU8> TreeForPlayer<SCORE_IN_FAVOR_OF> {
 
         // terminal leaf node
         if parent_node.child_count == 0 {
-            // a terminal node always results in the same result
-            // - visits * 1 / 0 / visits * -1
-            // so this division is guaranteed to be accurate and avoids over accumulation
-            let score_for_terminal = parent_node.score / parent_node.visits as i32;
-            parent_node.score += score_for_terminal;
-            return score_for_terminal;
+            let score_delta = parent_node
+                .game_state
+                .node_score_favoring_previous_player()
+                .as_monte_carlo_score();
+            parent_node.score += score_delta;
+            return score_delta;
         }
 
         let edge_offset = parent_node.first_edge as usize;
@@ -368,7 +367,11 @@ impl<const SCORE_IN_FAVOR_OF: PlayerU8> TreeForPlayer<SCORE_IN_FAVOR_OF> {
             } else {
                 child_node.game_state.into_simulation().simulate_random()
             };
-            child_node.score += score_delta;
+            // TODO: refactor so this hack to prevent over-counting is not necessary (insertion
+            // already sets the score)
+            if child_node.visits != 1 {
+                child_node.score += score_delta;
+            }
 
             let parent_node = &mut self.nodes[parent_node_idx as usize];
             // negamax
@@ -544,39 +547,63 @@ mod test {
     fn must_pick_obvious_winning_move() {
         let not_won_boards = (0..=OneBitBoard::new_full().get())
             .map(OneBitBoard::new)
-            .filter(OneBitBoard::has_won)
+            .filter(|board| !board.has_won())
             .collect_vec();
 
         let rand_not_won_board = || *not_won_boards.choose(&mut rand::rng()).unwrap();
 
-        let node_state = NodeState::from_boards(
-            [
-                [
-                    OneBitBoard::new_full(),
-                    OneBitBoard::new_full(),
-                    // only needs a move in cell 0 to win
-                    OneBitBoard::new(0b110),
-                    rand_not_won_board(),
-                    rand_not_won_board(),
-                    rand_not_won_board(),
-                    rand_not_won_board(),
-                    rand_not_won_board(),
-                    rand_not_won_board(),
-                ],
-                [
-                    rand_not_won_board(),
-                    rand_not_won_board(),
-                    OneBitBoard::new(0b110_000),
-                    rand_not_won_board(),
-                    rand_not_won_board(),
-                    rand_not_won_board(),
-                    rand_not_won_board(),
-                    rand_not_won_board(),
-                    rand_not_won_board(),
-                ],
-            ],
-            2,
-            Player::Player1,
-        );
+        let rand_exclusive = |player1: [OneBitBoard; 9]| {
+            player1.map(|p1_board| OneBitBoard::new(rand_not_won_board().get() & !p1_board.get()))
+        };
+        let p1 = [
+            OneBitBoard::new_full(),
+            OneBitBoard::new_full(),
+            // only needs a move in cell 0 to win
+            OneBitBoard::new(0b110),
+            rand_not_won_board(),
+            rand_not_won_board(),
+            rand_not_won_board(),
+            rand_not_won_board(),
+            rand_not_won_board(),
+            rand_not_won_board(),
+        ];
+        assert!({
+            let mut b = p1[2];
+            b.set_cell(0);
+            b.has_won()
+        });
+        let mut p2 = rand_exclusive(p1);
+        // ensure there are many moves to choose
+        p2[2] = OneBitBoard::new(0);
+
+        let node_state = NodeState::from_boards([p1, p2], 2, Player::Player1);
+
+        let mut tree = TreePlayer1::new_from_node(node_state);
+
+        tree.search_n(1_000);
+        let root_node = &tree.nodes[tree.root as usize];
+        let edges = &tree.edges[(root_node.first_edge as usize)
+            ..(root_node.first_edge as usize + root_node.child_count as usize)];
+        assert_eq!(edges.len(), 9 - 2);
+        dbg!(edges);
+        let children = edges
+            .iter()
+            .filter_map(|edge| {
+                edge.child_node
+                    .map(|child_idx| tree.nodes[child_idx.get() as usize])
+            })
+            .collect_vec();
+        assert_eq!(children.len(), 9 - 2);
+        dbg!(&children);
+        let max_idx = children
+            .iter()
+            .position_max_by_key(|node| node.visits)
+            .unwrap();
+        assert_eq!(max_idx, 0);
+        let max_child = children[max_idx];
+        assert_eq!(tree.best_explored_move(), 2 * 9);
+        assert_eq!(max_child.child_count, 0);
+        let max_edge = edges[max_idx];
+        assert_eq!(max_edge.move_, 2 * 9);
     }
 }

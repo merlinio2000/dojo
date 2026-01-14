@@ -107,11 +107,11 @@ impl SimulationState {
             bitmagic::count_ones_u32(self.super_boards[in_favor_of.other() as usize].get());
         // TODO PERF: check if this branches / is optimal
         if won_boards_favored_player > won_boards_other_player {
-            -1
+            1
         } else if won_boards_favored_player == won_boards_other_player {
             0
         } else {
-            1
+            -1
         }
     }
 
