@@ -359,19 +359,17 @@ impl<const SCORE_IN_FAVOR_OF: PlayerU8> TreeForPlayer<SCORE_IN_FAVOR_OF> {
             let child_node = &mut self.nodes[child_node_idx as usize];
             child_node.visits += 1;
             // NOTE: += intentional because the node might be re-used
-            let score_delta = child_node
-                .game_state
-                .node_score_favoring_previous_player()
-                .as_monte_carlo_score();
+            let score_delta = child_node.game_state.into_simulation().simulate_random();
             child_node.score += score_delta;
 
             let parent_node = &mut self.nodes[parent_node_idx as usize];
             // negamax: child.score favors the child's previous player (the parent's active player),
             // but parent.score favors the parent's previous player (the opponent).
             // So we subtract: a child win (positive) is a parent loss (negative contribution).
-            parent_node.score -= score_delta;
+            let score_delta_for_parent = -score_delta;
+            parent_node.score += score_delta_for_parent;
 
-            score_delta
+            score_delta_for_parent
         } else {
             let parent_visits_ln = (parent_node.visits as UCBScore).ln();
             let (mut max_ucb, mut max_ucb_node) = (f32::MIN, 0);
