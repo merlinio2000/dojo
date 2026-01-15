@@ -157,11 +157,11 @@ impl NodeState {
             bitmagic::count_ones_u32(self.super_board_for_player(in_favor_of.other()));
         // TODO PERF: check if this branches / is optimal
         if won_boards_favored_player > won_boards_other_player {
-            NodeScore::Loss
+            NodeScore::Win
         } else if won_boards_favored_player == won_boards_other_player {
             NodeScore::Draw
         } else {
-            NodeScore::Win
+            NodeScore::Loss
         }
     }
 
