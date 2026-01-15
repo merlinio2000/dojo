@@ -428,9 +428,182 @@ mod test {
     use crate::{
         board::one_bit::OneBitBoard,
         consts,
-        tree::{NodeState, TreePlayer1},
+        tree::{NodeState, TreePlayer1, upper_confidence_bound},
         types::Player,
     };
+
+    // ==================== DIAGNOSTIC TESTS FOR MCTS ISSUES ====================
+
+    /// Test 1: Verify UCB calculation handles negamax score convention correctly
+    /// In negamax, scores are stored from the perspective of the player to move at that node.
+    /// A positive score means the player-to-move is winning.
+    /// The UCB formula should select children where WE win (child loses) more often.
+    #[test]
+    fn ucb_score_perspective_is_consistent() {
+        // Parent has 100 visits
+        let parent_visits_ln = (100.0_f32).ln();
+
+        // Scores passed to UCB should already be from the PARENT's perspective (negated from child's stored score)
+        // Parent score +8 means parent is winning 80% from this move
+        // Parent score -8 means parent is losing 80% from this move
+
+        let ucb_parent_winning = upper_confidence_bound(parent_visits_ln, 8, 10);
+        let ucb_parent_losing = upper_confidence_bound(parent_visits_ln, -8, 10);
+
+        // UCB should prefer the move where the parent is winning
+        println!(
+            "UCB (parent winning): {ucb_parent_winning}, UCB (parent losing): {ucb_parent_losing}"
+        );
+
+        assert!(
+            ucb_parent_winning > ucb_parent_losing,
+            "UCB should prefer moves where the parent wins"
+        );
+    }
+
+    /// Test 2: Verify score backpropagation signs are correct
+    /// When we expand and get a simulation result, we need to verify the signs are correct
+    /// through the backpropagation chain.
+    #[test]
+    fn backpropagation_signs_are_consistent() {
+        let mut tree = TreePlayer1::new();
+
+        // Do some expansions and check if parent/child score relationships make sense
+        tree.search_n(100);
+
+        let root = &tree.nodes[tree.root as usize];
+        let root_children_scores: Vec<_> = tree.edges
+            [root.first_edge as usize..(root.first_edge as usize + root.child_count as usize)]
+            .iter()
+            .filter_map(|e| e.child_node)
+            .map(|idx| {
+                let child = &tree.nodes[idx.get() as usize];
+                (
+                    child.visits,
+                    child.score,
+                    child.score as f32 / child.visits.max(1) as f32,
+                )
+            })
+            .collect();
+
+        println!("Root visits: {}, Root score: {}", root.visits, root.score);
+        println!("Children (visits, score, avg): {:?}", root_children_scores);
+
+        // In a correct negamax implementation:
+        // - If a child has a positive average score, that means the child's player wins often
+        // - The parent should have a negative contribution from this child (because parent loses when child wins)
+
+        // Sum of negated child scores should approximately equal parent score (minus simulation noise)
+        let expected_parent_score: i32 = root_children_scores.iter().map(|(_, s, _)| -s).sum();
+        println!("Expected parent score (negated sum of children): {expected_parent_score}");
+        println!("Actual parent score: {}", root.score);
+
+        // This test is informational - examine the output to see if the math makes sense
+    }
+
+    /// Test 3: Verify simulation returns correct score perspective
+    /// The simulation should return a score from the perspective of the player
+    /// who just made the move BEFORE the simulation started.
+    #[test]
+    fn simulation_score_perspective() {
+        let empty_sim = NodeState::empty().into_simulation();
+        // active player = player1 -> favored(previous) player = player2
+
+        let mut p1_wins = 0;
+        let mut p2_wins = 0;
+        let mut draws = 0;
+
+        for _ in 0..1000 {
+            let sim_clone = empty_sim;
+            let result = sim_clone.simulate_random();
+            match result {
+                1 => p2_wins += 1,
+                -1 => p1_wins += 1,
+                0 => draws += 1,
+                _ => panic!("Invalid simulation result: {result}"),
+            }
+        }
+
+        println!("From empty board with P1 to move first in simulation:");
+        println!("P1 wins: {p1_wins}, P2 wins: {p2_wins}, Draws: {draws}");
+
+        // Given that P1 moves first, they have a slight advantage, so we'd expect
+        // p1_wins to be somewhat higher than p2_wins (or at least close)
+    }
+
+    /// Test 5: Verify score normalization is correct for UCB
+    /// MCTS scores should be in [-1, 1] range for proper UCB exploitation calculation
+    #[test]
+    fn scores_are_properly_normalized_in_ucb() {
+        let mut tree = TreePlayer1::new();
+        tree.search_n(1000);
+
+        let root = &tree.nodes[tree.root as usize];
+
+        for edge in &tree.edges
+            [root.first_edge as usize..(root.first_edge as usize + root.child_count as usize)]
+        {
+            if let Some(child_idx) = edge.child_node {
+                let child = &tree.nodes[child_idx.get() as usize];
+                let avg_score = child.score as f32 / child.visits.max(1) as f32;
+
+                // In a correct implementation, average score should be in [-1, 1]
+                // because each simulation returns -1, 0, or 1
+                assert!(
+                    avg_score >= -1.0 && avg_score <= 1.0,
+                    "Average score {avg_score} is outside [-1, 1] range for node with {} visits and {} score",
+                    child.visits,
+                    child.score
+                );
+            }
+        }
+    }
+
+    /// Test 6: Examine the score signs at different tree depths
+    /// In negamax, alternating levels should have scores with opposite signs
+    #[test]
+    fn negamax_score_signs_alternate_correctly() {
+        let mut tree = TreePlayer1::new();
+        tree.search_n(2000);
+
+        let root = &tree.nodes[tree.root as usize];
+        println!("\n=== NEGAMAX SCORE ANALYSIS ===");
+        println!(
+            "Root: visits={}, score={}, avg={:.3}",
+            root.visits,
+            root.score,
+            root.score as f32 / root.visits.max(1) as f32
+        );
+
+        // Examine first few children
+        let mut level1_info = Vec::new();
+        for edge in &tree.edges
+            [root.first_edge as usize..(root.first_edge as usize + root.child_count as usize)]
+        {
+            if let Some(child_idx) = edge.child_node {
+                let child = &tree.nodes[child_idx.get() as usize];
+                if child.visits > 10 {
+                    level1_info.push((
+                        edge.move_,
+                        child.visits,
+                        child.score,
+                        child.score as f32 / child.visits as f32,
+                    ));
+                }
+            }
+        }
+
+        level1_info.sort_by(|a, b| b.1.cmp(&a.1)); // Sort by visits descending
+        println!("\nTop Level 1 children (move, visits, score, avg):");
+        for (m, v, s, avg) in level1_info.iter().take(5) {
+            println!("  Move {m}: visits={v}, score={s}, avg={avg:.3}");
+        }
+
+        // The key insight: if UCB is selecting high-scoring children, but those
+        // scores represent the CHILD winning (bad for parent), then MCTS is broken
+    }
+
+    // ==================== END DIAGNOSTIC TESTS ====================
 
     #[test]
     fn search_works_on_root() {
