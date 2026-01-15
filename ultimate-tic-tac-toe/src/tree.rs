@@ -368,13 +368,15 @@ impl<const SCORE_IN_FAVOR_OF: PlayerU8> TreeForPlayer<SCORE_IN_FAVOR_OF> {
                 child_node.game_state.into_simulation().simulate_random()
             };
             // TODO: refactor so this hack to prevent over-counting is not necessary (insertion
-            // already sets the score)
-            if child_node.visits != 1 {
+            // already sets the score for a terminal node)
+            if !(child_node.child_count == 0 && child_node.visits == 1) {
                 child_node.score += score_delta;
             }
 
             let parent_node = &mut self.nodes[parent_node_idx as usize];
-            // negamax
+            // negamax: child.score favors the child's previous player (the parent's active player),
+            // but parent.score favors the parent's previous player (the opponent).
+            // So we subtract: a child win (positive) is a parent loss (negative contribution).
             parent_node.score -= score_delta;
 
             score_delta
