@@ -996,12 +996,12 @@ mod test {
             OneBitBoard::new_full(),
             // only needs a move in cell 0 to win
             OneBitBoard::new(0b110),
-            rand_not_won_board(),
-            rand_not_won_board(),
-            rand_not_won_board(),
-            rand_not_won_board(),
-            rand_not_won_board(),
-            rand_not_won_board(),
+            OneBitBoard::new(0),
+            OneBitBoard::new(0),
+            OneBitBoard::new(0),
+            OneBitBoard::new(0),
+            OneBitBoard::new(0),
+            OneBitBoard::new(0),
         ];
         assert!({
             let mut b = p1[2];
@@ -1060,13 +1060,13 @@ mod test {
             OneBitBoard::new_full(),
             // only needs a move in cell 0 to win
             OneBitBoard::new(0b110),
-            rand_not_won_board(),
+            OneBitBoard::new(0),
             // the forced board, has to allow a move on 3 to be able to force the board
             OneBitBoard::new(0),
-            rand_not_won_board(),
-            rand_not_won_board(),
-            rand_not_won_board(),
-            rand_not_won_board(),
+            OneBitBoard::new(0),
+            OneBitBoard::new(0),
+            OneBitBoard::new(0),
+            OneBitBoard::new(0),
         ];
         assert!({
             let mut b = p1[2];
@@ -1087,7 +1087,7 @@ mod test {
 
         let mut tree = TreePlayer1::new_from_node(node_state);
 
-        tree.search_n(1_000);
+        tree.search_n(100_000);
         let root_node = &tree.nodes[tree.root as usize];
         let edges = &tree.edges[(root_node.first_edge as usize)
             ..(root_node.first_edge as usize + root_node.child_count as usize)];
