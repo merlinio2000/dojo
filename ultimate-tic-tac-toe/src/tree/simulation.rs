@@ -2,7 +2,7 @@ use crate::{
     bitmagic,
     board::one_bit::OneBitBoard,
     consts, rng,
-    tree::{MonteCarloScore, NodeState},
+    tree::{MonteCarloScore, NodeState, node_state::NodeScore},
     types::Player,
     util::BoardMajorBitset,
 };
@@ -14,6 +14,7 @@ pub struct SimulationState {
     super_boards: [OneBitBoard; 2],
     active_player: Player,
     forced_board: u8,
+    predetermined_score_favoring_previous_player: NodeScore,
 }
 
 impl SimulationState {
@@ -22,12 +23,14 @@ impl SimulationState {
         super_boards: [OneBitBoard; 2],
         active_player: Player,
         forced_board: u8,
+        predetermined_score_favoring_previous_player: NodeScore,
     ) -> Self {
         Self {
             player_boards,
             super_boards,
             active_player,
             forced_board,
+            predetermined_score_favoring_previous_player,
         }
     }
 
@@ -51,7 +54,7 @@ impl SimulationState {
         let mut child_state = self;
         let player = self.active_player;
 
-        let board_idx = board_col_major_idx / consts::N_CELLS as u8;
+        let board_idx = board_col_major_idx / consts::N_CELLS;
 
         child_state.player_boards[player as usize].apply_move(board_col_major_idx);
 
@@ -60,7 +63,7 @@ impl SimulationState {
             .has_won();
 
         child_state.active_player = player.other();
-        child_state.forced_board = board_col_major_idx % consts::N_CELLS as u8;
+        child_state.forced_board = board_col_major_idx % consts::N_CELLS;
 
         if has_won_subboard {
             // block all cells in that board (simpler logic for available moves)
@@ -121,8 +124,12 @@ impl SimulationState {
     /// -  0 for a draw
     /// - -1 if the initally active player wins (favored loses)
     pub fn simulate_random(mut self) -> MonteCarloScore {
-        debug_assert!(!self.super_boards[0].has_won());
-        debug_assert!(!self.super_boards[1].has_won());
+        if self.predetermined_score_favoring_previous_player != NodeScore::Indeterminate {
+            return self
+                .predetermined_score_favoring_previous_player
+                .as_monte_carlo_score();
+        }
+
         let mut has_won = false;
         let inital_player = self.active_player;
         let mut available_moves = self.available_in_board_or_fallback();
@@ -147,5 +154,72 @@ impl SimulationState {
         } else {
             self.decide_draw(inital_player.other())
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn simulation_decide_draw_win() {
+        let state = SimulationState::new(
+            // SAFETY: 0 is a valid bitset (empty board)
+            unsafe {
+                [
+                    BoardMajorBitset::new_unchecked(0),
+                    BoardMajorBitset::new_unchecked(0),
+                ]
+            },
+            [OneBitBoard::new(0b000011011), OneBitBoard::new(0b100100100)], // P1: 5 boards, P2: 3 boards
+            Player::Player1,
+            NodeState::NO_MOVE_FORCED,
+            NodeScore::Indeterminate,
+        );
+
+        assert_eq!(state.decide_draw(Player::Player1), 1);
+        assert_eq!(state.decide_draw(Player::Player2), -1);
+    }
+
+    #[test]
+    fn simulation_decide_draw_loss() {
+        let state = SimulationState::new(
+            // SAFETY: 0 is a valid bitset (empty board)
+            unsafe {
+                [
+                    BoardMajorBitset::new_unchecked(0),
+                    BoardMajorBitset::new_unchecked(0),
+                ]
+            },
+            [OneBitBoard::new(0b000000011), OneBitBoard::new(0b100100100)], // P1: 2 boards, P2: 3 boards
+            Player::Player1,
+            NodeState::NO_MOVE_FORCED,
+            NodeScore::Indeterminate,
+        );
+
+        assert_eq!(state.decide_draw(Player::Player1), -1);
+        assert_eq!(state.decide_draw(Player::Player2), 1);
+    }
+
+    #[test]
+    fn simulation_decide_draw_draw() {
+        let state = SimulationState::new(
+            // SAFETY:  < 2^81 0 is a valid bitset
+            unsafe {
+                [
+                    // make sure that ones in the board are not counted
+                    BoardMajorBitset::new_unchecked(0b101),
+                    BoardMajorBitset::new_unchecked(0b001),
+                ]
+            },
+            [OneBitBoard::new(0b000000111), OneBitBoard::new(0b000111000)], // P1: 3 boards, P2: 3 boards
+            Player::Player1,
+            NodeState::NO_MOVE_FORCED,
+            NodeScore::Indeterminate,
+        );
+
+        // Equal boards, both should return 0 (draw)
+        assert_eq!(state.decide_draw(Player::Player1), 0);
+        assert_eq!(state.decide_draw(Player::Player2), 0);
     }
 }

@@ -242,7 +242,7 @@ impl<const SCORE_IN_FAVOR_OF: PlayerU8> TreeForPlayer<SCORE_IN_FAVOR_OF> {
     }
 
     fn get_or_insert_node(&mut self, previous_state: NodeState, move_: u8) -> NodeIdx {
-        let (new_node_state, child_count, score) = previous_state.apply_move(move_);
+        let (new_node_state, child_count, _) = previous_state.apply_move(move_);
 
         match self.lookup_without_root.entry(new_node_state) {
             Entry::Occupied(occupied_entry) => *occupied_entry.get(),
@@ -259,7 +259,7 @@ impl<const SCORE_IN_FAVOR_OF: PlayerU8> TreeForPlayer<SCORE_IN_FAVOR_OF> {
                 self.nodes.push(Node {
                     game_state: new_node_state,
                     visits: 0,
-                    score: score.as_monte_carlo_score(),
+                    score: 0,
                     child_count,
                     first_edge,
                 });
@@ -359,19 +359,11 @@ impl<const SCORE_IN_FAVOR_OF: PlayerU8> TreeForPlayer<SCORE_IN_FAVOR_OF> {
             let child_node = &mut self.nodes[child_node_idx as usize];
             child_node.visits += 1;
             // NOTE: += intentional because the node might be re-used
-            let score_delta = if child_node.child_count == 0 {
-                child_node
-                    .game_state
-                    .node_score_favoring_previous_player()
-                    .as_monte_carlo_score()
-            } else {
-                child_node.game_state.into_simulation().simulate_random()
-            };
-            // TODO: refactor so this hack to prevent over-counting is not necessary (insertion
-            // already sets the score for a terminal node)
-            if !(child_node.child_count == 0 && child_node.visits == 1) {
-                child_node.score += score_delta;
-            }
+            let score_delta = child_node
+                .game_state
+                .node_score_favoring_previous_player()
+                .as_monte_carlo_score();
+            child_node.score += score_delta;
 
             let parent_node = &mut self.nodes[parent_node_idx as usize];
             // negamax: child.score favors the child's previous player (the parent's active player),

@@ -236,6 +236,7 @@ impl NodeState {
                 .map(|player| OneBitBoard::new(self.super_board_for_player(player))),
             self.active_player(),
             self.forced_board(),
+            self.node_score_favoring_previous_player(),
         )
     }
 
