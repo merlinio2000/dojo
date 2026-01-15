@@ -454,5 +454,71 @@ mod test {
             NodeState::from_boards_allow_terminal([p1_more, p2_less], 4, Player::Player1, true);
 
         assert_eq!(state.decide_draw(Player::Player1), NodeScore::Win);
+        assert_eq!(state.decide_draw(Player::Player2), NodeScore::Loss);
+    }
+
+    #[test]
+    fn decide_draw_loss() {
+        let p1_less = [
+            OneBitBoard::new(0b111), // Won
+            OneBitBoard::new(0b111), // Won
+            OneBitBoard::new(0),
+            OneBitBoard::new(0b111), // Won
+            OneBitBoard::new(0),
+            OneBitBoard::new(0),
+            OneBitBoard::new(0),
+            OneBitBoard::new(0),
+            OneBitBoard::new(0),
+        ];
+        let p2_more = [
+            OneBitBoard::new(0),
+            OneBitBoard::new(0),
+            OneBitBoard::new(0b111), // Won
+            OneBitBoard::new(0),
+            OneBitBoard::new(0b111), // Won
+            OneBitBoard::new(0b111), // Won
+            OneBitBoard::new(0),
+            OneBitBoard::new(0),
+            OneBitBoard::new(0b111), // Won
+        ];
+
+        let state =
+            NodeState::from_boards_allow_terminal([p1_less, p2_more], 4, Player::Player1, true);
+
+        assert_eq!(state.decide_draw(Player::Player1), NodeScore::Loss);
+        assert_eq!(state.decide_draw(Player::Player2), NodeScore::Win);
+    }
+
+    #[test]
+    fn decide_draw_draw() {
+        let p1_equal = [
+            OneBitBoard::new(0b111), // Won
+            OneBitBoard::new(0b111), // Won
+            OneBitBoard::new(0),
+            OneBitBoard::new(0b111), // Won
+            OneBitBoard::new(0),
+            OneBitBoard::new(0b111), // Won
+            OneBitBoard::new(0),
+            // verify ones in the board alone are not counted
+            OneBitBoard::new(0b100_000),
+            OneBitBoard::new(0),
+        ];
+        let p2_equal = [
+            OneBitBoard::new(0),
+            OneBitBoard::new(0b101_000),
+            OneBitBoard::new(0b111), // Won
+            OneBitBoard::new(0),
+            OneBitBoard::new(0b111), // Won
+            OneBitBoard::new(0),
+            OneBitBoard::new(0b111), // Won
+            OneBitBoard::new(0),
+            OneBitBoard::new(0b111), // Won
+        ];
+
+        let state =
+            NodeState::from_boards_allow_terminal([p1_equal, p2_equal], 4, Player::Player1, true);
+
+        assert_eq!(state.decide_draw(Player::Player1), NodeScore::Draw);
+        assert_eq!(state.decide_draw(Player::Player2), NodeScore::Draw);
     }
 }
