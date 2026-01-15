@@ -815,6 +815,43 @@ mod test {
     // ==================== END DIAGNOSTIC TESTS ====================
 
     #[test]
+    fn mcts_responds_to_opponent_threat() {
+        let p1 = [
+            OneBitBoard::new(0),
+            OneBitBoard::new(0b111), // Won board 1
+            OneBitBoard::new(0b111), // Won board 2
+            OneBitBoard::new(0),
+            OneBitBoard::new(0),
+            OneBitBoard::new(0),
+            OneBitBoard::new(0),
+            OneBitBoard::new(0),
+            OneBitBoard::new(0),
+        ];
+        let p2 = [
+            OneBitBoard::new(0b111), // Won board 0
+            OneBitBoard::new(0),
+            OneBitBoard::new(0),
+            OneBitBoard::new(0b111), // Won board 3
+            OneBitBoard::new(0),
+            OneBitBoard::new(0),
+            OneBitBoard::new(0b110), // Needs cell 0 to win board 6 and game
+            OneBitBoard::new(0),
+            OneBitBoard::new(0),
+        ];
+
+        let node_state = NodeState::from_boards([p1, p2], 4, Player::Player1);
+        for _ in 0..10 {
+            let mut tree = TreePlayer1::new_from_node(node_state);
+
+            tree.search_n(5000);
+
+            let best_move = tree.best_explored_move();
+            // move should not send to board 6
+            assert_ne!(best_move % consts::N_CELLS, 6);
+        }
+    }
+
+    #[test]
     fn search_works_on_root() {
         let mut tree = TreePlayer1::new();
         tree.search();
@@ -988,6 +1025,7 @@ mod test {
         let max_edge = edges[max_idx];
         assert_eq!(max_edge.move_, 2 * 9);
     }
+
     #[test]
     fn must_pick_obvious_winning_move_in_2() {
         let not_won_boards = (0..=OneBitBoard::new_full().get())
@@ -1053,6 +1091,7 @@ mod test {
             .unwrap();
         assert_eq!(max_idx, 3);
         let max_child = children[max_idx];
+
         let expected_best_move = 4 * 9 + 3;
         assert_eq!(tree.best_explored_move(), expected_best_move);
         assert_eq!(max_child.child_count, 1);
