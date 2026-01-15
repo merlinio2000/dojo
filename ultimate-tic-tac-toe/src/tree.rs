@@ -243,6 +243,25 @@ impl<const SCORE_IN_FAVOR_OF: PlayerU8> TreeForPlayer<SCORE_IN_FAVOR_OF> {
 
     fn get_or_insert_node(&mut self, previous_state: NodeState, move_: u8) -> NodeIdx {
         let (new_node_state, child_count, _) = previous_state.apply_move(move_);
+        #[cfg(debug_assertions)]
+        {
+            use crate::tree::node_state::NodeScore;
+
+            let n_children = previous_state
+                .available_in_board_or_fallback()
+                .get()
+                .count_ones();
+            if n_children == 1
+                && new_node_state.node_score_favoring_previous_player() != NodeScore::Indeterminate
+            {
+                debug_assert_eq!(
+                    previous_state.into_simulation().simulate_random(),
+                    new_node_state
+                        .node_score_favoring_previous_player()
+                        .as_monte_carlo_score()
+                )
+            }
+        }
 
         match self.lookup_without_root.entry(new_node_state) {
             Entry::Occupied(occupied_entry) => *occupied_entry.get(),
