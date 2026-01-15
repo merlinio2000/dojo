@@ -245,11 +245,17 @@ impl NodeState {
         forced_board: u8,
         active_player: Player,
     ) -> Self {
+        Self::from_boards_allow_terminal(player_boards, forced_board, active_player, false)
+    }
+    #[cfg(test)]
+    pub fn from_boards_allow_terminal(
+        player_boards: [[OneBitBoard; 9]; 2],
+        forced_board: u8,
+        active_player: Player,
+        allow_terminal: bool,
+    ) -> Self {
         let mut result = Self { bits: [0, 0] };
         for (player_idx, boards) in player_boards.into_iter().enumerate() {
-            if player_idx == 1 {
-                assert_eq!(result.super_board_for_player(Player::Player1), 0b11);
-            }
             for (board_idx, board) in boards.into_iter().enumerate() {
                 use crate::types::{PLAYER1_U8, PLAYER2_U8};
 
@@ -276,12 +282,14 @@ impl NodeState {
             0
         );
 
-        if result.has_won(active_player) {
-            panic!("can not create loss node")
-        } else if result.has_won(active_player.other()) {
-            panic!("can not create win node")
-        } else if result.available_in_board_or_fallback().is_empty() {
-            panic!("can not create terminal node")
+        if !allow_terminal {
+            if result.has_won(active_player) {
+                panic!("can not create loss node")
+            } else if result.has_won(active_player.other()) {
+                panic!("can not create win node")
+            } else if result.available_in_board_or_fallback().is_empty() {
+                panic!("can not create terminal node")
+            }
         }
         result.bits[Player::Player2 as usize] |=
             (NodeScore::Indeterminate as u128) << (Self::META_OFFSET + Self::SCORE_OFFSET_IN_META);
@@ -292,7 +300,12 @@ impl NodeState {
 
 #[cfg(test)]
 mod test {
-    use crate::{consts, tree::NodeState};
+    use crate::{
+        board::one_bit::OneBitBoard,
+        consts,
+        tree::{NodeState, node_state::NodeScore},
+        types::Player,
+    };
 
     #[test]
     fn test_apply_move() {
@@ -410,5 +423,36 @@ mod test {
             state.available_in_board_or_fallback().get(),
             0b1_1111_1111 << (state.forced_board() * consts::N_CELLS)
         );
+    }
+
+    #[test]
+    fn decide_draw_win() {
+        let p1_more = [
+            OneBitBoard::new(0b111), // Won
+            OneBitBoard::new(0b111), // Won
+            OneBitBoard::new(0),
+            OneBitBoard::new(0b111), // Won
+            OneBitBoard::new(0),
+            OneBitBoard::new(0b111), // Won
+            OneBitBoard::new(0),
+            OneBitBoard::new(0b111), // Won
+            OneBitBoard::new(0),
+        ];
+        let p2_less = [
+            OneBitBoard::new(0),
+            OneBitBoard::new(0),
+            OneBitBoard::new(0b111), // Won
+            OneBitBoard::new(0),
+            OneBitBoard::new(0b111), // Won
+            OneBitBoard::new(0),
+            OneBitBoard::new(0b111), // Won
+            OneBitBoard::new(0),
+            OneBitBoard::new(0b111), // Won
+        ];
+
+        let state =
+            NodeState::from_boards_allow_terminal([p1_more, p2_less], 4, Player::Player1, true);
+
+        assert_eq!(state.decide_draw(Player::Player1), NodeScore::Win);
     }
 }

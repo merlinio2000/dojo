@@ -819,14 +819,14 @@ mod test {
         let mut tree = TreePlayer1::new();
         tree.search();
         let chosen_move = tree.best_explored_move();
-        assert!((0..consts::N_CELLS_NESTED as u8).contains(&chosen_move));
+        assert!((0..consts::N_CELLS_NESTED).contains(&chosen_move));
     }
 
     #[test]
     fn children_are_explored_first() {
         let mut tree = TreePlayer1::new();
         let root = &tree.nodes[tree.root as usize];
-        assert_eq!(root.child_count, consts::N_CELLS_NESTED as u8);
+        assert_eq!(root.child_count, consts::N_CELLS_NESTED);
         assert_eq!(tree.nodes.len(), 1);
         assert_eq!(tree.edges.len(), consts::N_CELLS_NESTED as usize);
         tree.search_n(consts::N_CELLS_NESTED as usize);
@@ -987,5 +987,89 @@ mod test {
         assert_eq!(max_child.child_count, 0);
         let max_edge = edges[max_idx];
         assert_eq!(max_edge.move_, 2 * 9);
+    }
+    #[test]
+    fn must_pick_obvious_winning_move_in_2() {
+        let not_won_boards = (0..=OneBitBoard::new_full().get())
+            .map(OneBitBoard::new)
+            .filter(|board| !board.has_won())
+            .collect_vec();
+
+        let rand_not_won_board = || *not_won_boards.choose(&mut rand::rng()).unwrap();
+
+        let rand_exclusive = |player1: [OneBitBoard; 9]| {
+            player1.map(|p1_board| OneBitBoard::new(rand_not_won_board().get() & !p1_board.get()))
+        };
+        let mut p1 = [
+            OneBitBoard::new_full(),
+            OneBitBoard::new_full(),
+            // only needs a move in cell 0 to win
+            OneBitBoard::new(0b110),
+            rand_not_won_board(),
+            // the forced board, has to allow a move on 3 to be able to force the board
+            OneBitBoard::new(0),
+            rand_not_won_board(),
+            rand_not_won_board(),
+            rand_not_won_board(),
+            rand_not_won_board(),
+        ];
+        assert!({
+            let mut b = p1[2];
+            b.set_cell(0);
+            b.has_won()
+        });
+        let mut p2 = rand_exclusive(p1);
+        // ensure there are many moves to choose
+        p2[2] = OneBitBoard::new(0);
+        p2[4] = OneBitBoard::new(0);
+
+        p1[3] = OneBitBoard::new(0b010_101_010);
+        p2[3] = OneBitBoard::new(0b101_010_001);
+        // move that forces board 2 needs to be available
+        assert_eq!(p2[3].get() & 0b100, 0);
+
+        let node_state = NodeState::from_boards([p1, p2], 4, Player::Player1);
+
+        let mut tree = TreePlayer1::new_from_node(node_state);
+
+        tree.search_n(1_000);
+        let root_node = &tree.nodes[tree.root as usize];
+        let edges = &tree.edges[(root_node.first_edge as usize)
+            ..(root_node.first_edge as usize + root_node.child_count as usize)];
+        assert_eq!(edges.len(), 9);
+        dbg!(edges);
+        let children = edges
+            .iter()
+            .filter_map(|edge| {
+                edge.child_node
+                    .map(|child_idx| tree.nodes[child_idx.get() as usize])
+            })
+            .collect_vec();
+        assert_eq!(children.len(), 9);
+        dbg!(&children);
+        let max_idx = children
+            .iter()
+            .position_max_by_key(|node| node.visits)
+            .unwrap();
+        assert_eq!(max_idx, 3);
+        let max_child = children[max_idx];
+        let expected_best_move = 4 * 9 + 3;
+        assert_eq!(tree.best_explored_move(), expected_best_move);
+        assert_eq!(max_child.child_count, 1);
+
+        let max_edge = edges[max_idx];
+        assert_eq!(max_edge.move_, expected_best_move);
+
+        tree.apply_explored_move(expected_best_move);
+
+        // should be the only available child
+        tree.apply_explored_move(3 * 9 + 2);
+
+        tree.search_n(3_000);
+        let expected_best_move = 2 * 9;
+        assert_eq!(tree.best_explored_move(), expected_best_move);
+
+        let root_node = &tree.nodes[tree.root as usize];
+        assert_eq!(root_node.child_count, 9 - 2);
     }
 }
