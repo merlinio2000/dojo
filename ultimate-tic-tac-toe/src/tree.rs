@@ -254,12 +254,23 @@ impl<const SCORE_IN_FAVOR_OF: PlayerU8> TreeForPlayer<SCORE_IN_FAVOR_OF> {
             if n_children == 1
                 && new_node_state.node_score_favoring_previous_player() != NodeScore::Indeterminate
             {
+                eprintln!(
+                    "MERBUG supers previous\n{:09b}\n{:09b}",
+                    previous_state.super_board_for_player(Player::Player1),
+                    previous_state.super_board_for_player(Player::Player2)
+                );
+                eprintln!(
+                    "MERBUG supers new\n{:09b}\n{:09b}",
+                    new_node_state.super_board_for_player(Player::Player1),
+                    new_node_state.super_board_for_player(Player::Player2)
+                );
                 debug_assert_eq!(
                     previous_state.into_simulation().simulate_random(),
                     new_node_state
                         .node_score_favoring_previous_player()
-                        .as_monte_carlo_score()
-                )
+                        .as_monte_carlo_score(),
+                    "simulation of previous state with only one move mismatches score of new node with move {move_}",
+                );
             }
         }
 
