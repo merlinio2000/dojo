@@ -189,7 +189,7 @@ impl<const SCORE_IN_FAVOR_OF: PlayerU8> TreeForPlayer<SCORE_IN_FAVOR_OF> {
             let available_moves: u128 = root_node.game_state.available_in_board_or_fallback().get();
             // remove all moves including and above the selected, the index of the move is the
             // amount of less significant 1
-            let available_moves = available_moves << (128 - move_);
+            let available_moves = available_moves << (127 - move_);
             let move_edge_idx = bitmagic::count_ones_u128(available_moves);
             debug_assert_eq!(edges[move_edge_idx as usize].child_node, None);
             debug_assert_eq!(edges[move_edge_idx as usize].move_, 0);
@@ -200,43 +200,6 @@ impl<const SCORE_IN_FAVOR_OF: PlayerU8> TreeForPlayer<SCORE_IN_FAVOR_OF> {
             edge_for_move.move_ = move_;
             edge_for_move.child_node = NonZero::new(child_node);
             self.root = child_node;
-        }
-        {
-            let merbug_root_node = self.nodes[self.root as usize];
-            let available_mask = merbug_root_node
-                .game_state
-                .available_in_board_or_fallback()
-                .get();
-            let forced = merbug_root_node.game_state.forced_board();
-            let forced_idx_min = forced * 9;
-            let forced_idx_max_incl = forced_idx_min + 8;
-            eprintln!(
-                "MERBUG forced/available: {forced} e [{forced_idx_min}, {forced_idx_max_incl}]\n{available_mask:081b}"
-            );
-            let wins_p1 = [0, 1, 2, 3, 4, 5, 6, 7, 8].map(|board_idx| {
-                let board = merbug_root_node
-                    .game_state
-                    .get_player_board(Player::Player1, board_idx);
-                (format!("{:09b}", board.get()), board.has_won())
-            });
-            let wins_p2 = [0, 1, 2, 3, 4, 5, 6, 7, 8].map(|board_idx| {
-                let board = merbug_root_node
-                    .game_state
-                    .get_player_board(Player::Player2, board_idx);
-                (format!("{:09b}", board.get()), board.has_won())
-            });
-            eprintln!(
-                "MERBUG wins p1: {:09b}\n{wins_p1:?}",
-                merbug_root_node
-                    .game_state
-                    .super_board_for_player(Player::Player1)
-            );
-            eprintln!(
-                "MERBUG wins p2: {:09b}\n{wins_p2:?}",
-                merbug_root_node
-                    .game_state
-                    .super_board_for_player(Player::Player2)
-            );
         }
         self.root
     }
@@ -254,21 +217,12 @@ impl<const SCORE_IN_FAVOR_OF: PlayerU8> TreeForPlayer<SCORE_IN_FAVOR_OF> {
             if n_children == 1
                 && new_node_state.node_score_favoring_previous_player() != NodeScore::Indeterminate
             {
-                eprintln!(
-                    "MERBUG supers previous\n{:09b}\n{:09b}",
-                    previous_state.super_board_for_player(Player::Player1),
-                    previous_state.super_board_for_player(Player::Player2)
-                );
-                eprintln!(
-                    "MERBUG supers new\n{:09b}\n{:09b}",
-                    new_node_state.super_board_for_player(Player::Player1),
-                    new_node_state.super_board_for_player(Player::Player2)
-                );
                 debug_assert_eq!(
-                    previous_state.into_simulation().simulate_random(),
                     new_node_state
                         .node_score_favoring_previous_player()
                         .as_monte_carlo_score(),
+                    // simulation of previous node happens from "previous previous" perspective
+                    -previous_state.into_simulation().simulate_random(),
                     "simulation of previous state with only one move mismatches score of new node with move {move_}",
                 );
             }

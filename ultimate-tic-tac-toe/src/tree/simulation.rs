@@ -118,7 +118,7 @@ impl SimulationState {
         }
     }
 
-    /// NOTE: favors the player that player before this move
+    /// NOTE: favors the player that played before this move
     /// # Returns
     /// -  1 if the initially active player loses (favored wins)
     /// -  0 for a draw
